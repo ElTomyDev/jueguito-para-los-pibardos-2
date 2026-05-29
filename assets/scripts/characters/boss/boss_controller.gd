@@ -7,6 +7,8 @@ class_name BossController
 @export_category("Boss Stats")
 @export var health: float = 10000.0
 @export var damage: float = 56.1
+@export var damage_increment: float = 0.01
+
 
 @export_category("Attack Config")
 @export var rotation_speed: float = 50.0
@@ -76,8 +78,10 @@ func update_actions_by_state() -> void:
 	if current_state == 0:
 		if near_player:
 			Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
+		damage += damage_increment # incrementa el daño
 	elif  current_state == 1:
 		Utils.view_to(global_position, shot_dir, rotation_speed, self)
+	
 
 func _dead_if_can() -> void:
 	if health <= 0:
@@ -107,4 +111,4 @@ func _get_near_player() -> CharacterBody2D:
 	return near
 
 func can_shot() -> bool:
-	return current_state == 1
+	return current_state == 1 # Dispara solo en su estado de ataque de disparo
