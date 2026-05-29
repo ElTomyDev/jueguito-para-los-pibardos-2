@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3 uid="uid://bi11g54osr03a"]
+
+[ext_resource type="Script" uid="uid://dcdr7m1g6hpch" path="res://assets/scripts/simulation_manager.gd" id="1_fdx1r"]
+[ext_resource type="PackedScene" uid="uid://cfwgy1ayuvs04" path="res://assets/scenes/characters/player_controller.tscn" id="2_465v1"]
+[ext_resource type="PackedScene" uid="uid://do24pdmmrhm74" path="res://assets/scenes/characters/boss_controller.tscn" id="3_inlq4"]
+
+[node name="SimulationManager" type="Node2D" node_paths=PackedStringArray("spawn_player_points", "boss_spawn")]
+script = ExtResource("1_fdx1r")
+players = Array[PackedScene]([ExtResource("2_465v1")])
+spawn_player_points = [NodePath("SpawnPlayer1")]
+boss_spawn = NodePath("SpawnBoss")
+boss = ExtResource("3_inlq4")
+
+[node name="SpawnPlayer1" type="Node2D" parent="."]
+
+[node name="SpawnBoss" type="Node2D" parent="."]

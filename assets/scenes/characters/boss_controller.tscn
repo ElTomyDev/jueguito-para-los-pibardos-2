@@ -1,0 +1,49 @@
+[gd_scene load_steps=9 format=3 uid="uid://do24pdmmrhm74"]
+
+[ext_resource type="Script" uid="uid://bslnh33d3sn7i" path="res://assets/scripts/characters/boss/boss_controller.gd" id="1_agbej"]
+[ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="2_e77qu"]
+[ext_resource type="Script" uid="uid://y32pm2gjq5x3" path="res://assets/scripts/characters/boss/floating_movement.gd" id="3_n7ob0"]
+[ext_resource type="Script" uid="uid://b708ogaqfsg3x" path="res://assets/scripts/characters/boss/ball_attack.gd" id="4_4m0k2"]
+[ext_resource type="Script" uid="uid://dv8tqb8qgxvle" path="res://assets/scripts/characters/damage_area.gd" id="5_5dy75"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_n7ob0"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_4m0k2"]
+radius = 908.2665
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_5dy75"]
+radius = 102.044106
+
+[node name="BossController" type="CharacterBody2D" groups=["Boss"]]
+collision_layer = 2
+collision_mask = 8
+script = ExtResource("1_agbej")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_e77qu")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+scale = Vector2(6.299, 6.299)
+shape = SubResource("RectangleShape2D_n7ob0")
+
+[node name="BossMechanics" type="Node2D" parent="."]
+
+[node name="floating_movement" type="Node2D" parent="BossMechanics"]
+script = ExtResource("3_n7ob0")
+
+[node name="BallAttack" type="Node2D" parent="BossMechanics"]
+script = ExtResource("4_4m0k2")
+
+[node name="PlayerDetect" type="Area2D" parent="."]
+collision_layer = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="PlayerDetect"]
+shape = SubResource("CircleShape2D_4m0k2")
+
+[node name="DamageArea" type="Area2D" parent="." groups=["Boss"]]
+collision_layer = 2
+collision_mask = 4
+script = ExtResource("5_5dy75")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
+shape = SubResource("CircleShape2D_5dy75")

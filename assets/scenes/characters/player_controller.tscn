@@ -1,12 +1,21 @@
-[gd_scene load_steps=4 format=3 uid="uid://cfwgy1ayuvs04"]
+[gd_scene load_steps=10 format=3 uid="uid://cfwgy1ayuvs04"]
 
 [ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="1_uagbc"]
-[ext_resource type="Script" uid="uid://mbm26ve2o65w" path="res://assets/scripts/characters/player_controller.gd" id="1_vwu8u"]
+[ext_resource type="Script" uid="uid://mbm26ve2o65w" path="res://assets/scripts/characters/player/player_controller.gd" id="1_vwu8u"]
+[ext_resource type="Script" uid="uid://ceo6x7mwr7ess" path="res://assets/scripts/characters/player/smooth_movement.gd" id="3_iy8qy"]
+[ext_resource type="Script" uid="uid://bmdulpsi3qw7d" path="res://assets/scripts/characters/player/controls.gd" id="4_n28hv"]
+[ext_resource type="Script" uid="uid://cqjn8cs6vpvfh" path="res://assets/scripts/characters/player/adjustable_jump.gd" id="5_xjp6k"]
+[ext_resource type="PackedScene" uid="uid://cra5e1yrb41sb" path="res://assets/scenes/attacks/gun/gun.tscn" id="6_8ckkg"]
+[ext_resource type="Script" uid="uid://dv8tqb8qgxvle" path="res://assets/scripts/characters/damage_area.gd" id="7_btdcj"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vwu8u"]
 size = Vector2(24, 24)
 
-[node name="PlayerController" type="CharacterBody2D"]
+[sub_resource type="CircleShape2D" id="CircleShape2D_8ckkg"]
+radius = 14.035668
+
+[node name="PlayerController" type="CharacterBody2D" groups=["Players"]]
+collision_mask = 8
 script = ExtResource("1_vwu8u")
 
 [node name="BaseCollider" type="CollisionShape2D" parent="."]
@@ -15,3 +24,26 @@ shape = SubResource("RectangleShape2D_vwu8u")
 [node name="Sprite2D" type="Sprite2D" parent="."]
 scale = Vector2(0.2, 0.2)
 texture = ExtResource("1_uagbc")
+
+[node name="PlayerMechanics" type="Node2D" parent="."]
+
+[node name="SmoothMovement" type="Node2D" parent="PlayerMechanics"]
+script = ExtResource("3_iy8qy")
+
+[node name="Controls" type="Node2D" parent="PlayerMechanics"]
+script = ExtResource("4_n28hv")
+right_control = &"p_right"
+left_control = &"p_left"
+jump_control = &"p_jump"
+
+[node name="AdjustableJump" type="Node2D" parent="PlayerMechanics"]
+script = ExtResource("5_xjp6k")
+
+[node name="Gun" parent="." instance=ExtResource("6_8ckkg")]
+
+[node name="DamageArea" type="Area2D" parent="." groups=["Players"]]
+collision_mask = 4
+script = ExtResource("7_btdcj")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
+shape = SubResource("CircleShape2D_8ckkg")

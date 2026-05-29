@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3 uid="uid://cra5e1yrb41sb"]
+
+[ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/gun/gun.gd" id="1_j7nqa"]
+[ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="2_p22ur"]
+
+[node name="Gun" type="Node2D"]
+script = ExtResource("1_j7nqa")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(1.7285347e-06, 3.5762787e-07)
+scale = Vector2(0.21875, 0.09375)
+texture = ExtResource("2_p22ur")
+
+[node name="ShotPoint" type="Node2D" parent="."]
+position = Vector2(14, 0)

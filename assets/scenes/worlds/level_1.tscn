@@ -1,17 +1,32 @@
-[gd_scene load_steps=3 format=3 uid="uid://beeao680qoeeb"]
+[gd_scene load_steps=4 format=3 uid="uid://beeao680qoeeb"]
 
-[ext_resource type="PackedScene" uid="uid://cfwgy1ayuvs04" path="res://assets/scenes/characters/player_controller.tscn" id="1_3hma4"]
+[ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="1_qbvmm"]
+[ext_resource type="PackedScene" uid="uid://bi11g54osr03a" path="res://assets/scenes/simulation_manager.tscn" id="2_qbvmm"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_3ngay"]
-size = Vector2(799.5, 6)
+size = Vector2(799.75, 6)
 
-[node name="level-1" type="Node2D"]
+[node name="test" type="Node2D"]
 
 [node name="floor-no-img" type="StaticBody2D" parent="."]
+collision_layer = 8
+collision_mask = 0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="floor-no-img"]
-position = Vector2(400.25, 323)
+position = Vector2(399.875, 323)
 shape = SubResource("RectangleShape2D_3ngay")
 
-[node name="PlayerController" parent="." instance=ExtResource("1_3hma4")]
-position = Vector2(122, 210)
+[node name="Sprite2D" type="Sprite2D" parent="floor-no-img"]
+position = Vector2(400, 323)
+scale = Vector2(6.25, 0.04687503)
+texture = ExtResource("1_qbvmm")
+
+[node name="SimulationManager" parent="." instance=ExtResource("2_qbvmm")]
+
+[node name="SpawnPlayer1" parent="SimulationManager" index="0"]
+position = Vector2(189, 160)
+
+[node name="SpawnBoss" parent="SimulationManager" index="1"]
+position = Vector2(519, 113)
+
+[editable path="SimulationManager"]
