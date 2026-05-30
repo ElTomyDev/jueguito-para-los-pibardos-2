@@ -3,12 +3,12 @@ class_name BossController
 
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
+@onready var ball_attack: BallAttack = $BossMechanics/BallAttack as BallAttack
 
 @export_category("Boss Stats")
 @export var health: float = 10000.0
 @export var damage: float = 56.1
 @export var damage_increment: float = 0.01
-
 
 @export_category("Attack Config")
 @export var rotation_speed: float = 50.0
@@ -36,15 +36,17 @@ var near_player: PlayerController
 func _ready() -> void:
 	total_damage = bullet_damage + damage
 	floating_movement.setup(self)
+	ball_attack.setup(self)
 	damage_area.setup(self)
 
 func _process(delta: float) -> void:
-	update_boss_values()
+	update_boss_values_by_nn()
 	_update_boss_info()
-	_dead_if_can()
+	update_boss()
 
 func _physics_process(delta: float) -> void:
 	floating_movement.update(delta)
+	ball_attack.update(delta)
 	update_actions_by_state()
 	move_and_slide()
 
@@ -63,7 +65,6 @@ func inputs() -> Array:
 	] + _get_players_stats()
 
 func update_boss_values_by_nn() -> void:
-	# _dead_if_can()
 	# Actualiza la direccion de movimiento (entre -1 y 1) 
 	# Obtiene la direccion del output de la red que es una lista [x,y] en un diccionario global
 	if not GlobalVars.nn_outputs.is_empty():
@@ -71,7 +72,8 @@ func update_boss_values_by_nn() -> void:
 		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
 		current_state = GlobalVars.nn_outputs['current_state']
 
-func update_boss_values() -> void:
+func update_boss() -> void:
+	_dead_if_can()
 	near_player = _get_near_player()
 
 func update_actions_by_state() -> void:
@@ -81,22 +83,23 @@ func update_actions_by_state() -> void:
 		damage += damage_increment # incrementa el daño
 	elif  current_state == 1:
 		Utils.view_to(global_position, shot_dir, rotation_speed, self)
-	
 
 func _dead_if_can() -> void:
 	if health <= 0:
 		queue_free()
 
 func _get_players_stats() -> Array:
-	var health_players: Array = []
+	var players_health: Array = []
 	var players_positions: Array = []
 	
-	for health_value in GlobalVars.health_players.values():
-		health_players.append(health_value)
 	for player in GlobalVars.players:
+		players_health.append(player.health)
 		players_positions.append(player.global_position)
-
-	return health_players + players_positions + [near_player.x, near_player.y]
+	
+	var near_player_pos: Array = [0.0, 0.0]
+	if near_player:
+		near_player_pos = [near_player.global_position.x, near_player.global_position.y]
+	return players_health + players_positions + near_player_pos
 
 func _get_near_player() -> CharacterBody2D:
 	if not GlobalVars.players:return
