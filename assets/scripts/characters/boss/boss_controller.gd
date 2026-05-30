@@ -12,7 +12,7 @@ var viewport_size: Vector2
 @export var base_damage = 50.0
 @export var damage_increment: float = 0.5
 @export var max_damage: float = 500.0
-@export var boss_pashe: int = 0
+@export var max_phases: int = 2
 
 @export_category("Attack Config")
 @export var rotation_speed: float = 50.0
@@ -41,6 +41,7 @@ var near_player: PlayerController
 # Estadisticas
 var health: float
 var damage: float
+var boss_pashe: int = 0
 
 func _ready() -> void:
 	init_values()
@@ -63,9 +64,9 @@ func stats_normalized() -> Array:
 		damage / max_damage,
 		self.global_position.x / viewport_size.x,
 		self.global_position.y / viewport_size.y,
-		move_dir.x, # Ya Normalizado
-		move_dir.y, # Ya Normalizado
-		shot_dir.x, # Ya Normalizado
+		velocity.x / max_speed,  # estado físico real, no output de la red
+		velocity.y / max_speed,
+		float(boss_pashe) / max_phases,
 	]
 
 func init_values() -> void:

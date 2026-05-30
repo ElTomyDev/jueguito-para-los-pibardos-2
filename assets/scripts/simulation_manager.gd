@@ -32,7 +32,7 @@ var prev_boss_dist     : float = 0.0
 
 func _ready() -> void:
 	_setup_nn()
-	spawn_entities()
+	start_simulation()
 
 
 # ─────────────────────────────────────────
@@ -53,17 +53,8 @@ func _setup_nn() -> void:
 # ─────────────────────────────────────────
 #  Spawn de entidades
 # ─────────────────────────────────────────
-func spawn_entities() -> void:
-	# Limpia instancias anteriores
-	for p in player_instances:
-		if is_instance_valid(p):
-			p.queue_free()
-	player_instances.clear()
-	GlobalVars.players.clear()
-	
-	if is_instance_valid(boss_instance):
-		boss_instance.queue_free()
-	boss_instance = null
+func start_simulation() -> void:
+	clean_entities()
 	
 	# Spawnea jugadores
 	for idx in range(players.size()):
@@ -81,6 +72,18 @@ func spawn_entities() -> void:
 	prev_player_health = _get_total_player_health()
 	prev_boss_dist     = _get_dist_boss_to_nearest_player()
 	episode_running    = true
+
+func clean_entities() -> void:
+	# Limpia instancias anteriores
+	for p in player_instances:
+		if is_instance_valid(p):
+			p.queue_free()
+	player_instances.clear()
+	GlobalVars.players.clear()
+	
+	if is_instance_valid(boss_instance):
+		boss_instance.queue_free()
+	boss_instance = null
 
 # ─────────────────────────────────────────
 #  Loop principal: corre cada physics frame
@@ -141,7 +144,7 @@ func _end_episode(boss_won: bool) -> void:
 	
 	# Pequeña pausa antes del respawn (opcional, podés sacarla)
 	await get_tree().create_timer(1.5).timeout
-	spawn_entities()
+	start_simulation()
 
 # ─────────────────────────────────────────
 #  Construcción del vector de inputs (normalizado)
@@ -159,7 +162,7 @@ func _build_input_vec() -> Array:
 	if np:
 		input_vec.append_array(np.stats_normalized())
 	else:
-		input_vec.append_array([0.0, 0.0, 0.0, 0.0, 0.0])
+		input_vec.append_array([0.0, 0.0, 0.0])
 	
 	return input_vec  # 12 valores
 

@@ -8,7 +8,7 @@ class_name NeuralNetwork
 #                sigmoid en output 4  (accion discreta)
 # ─────────────────────────────────────────
 
-const LAYER_SIZES : Array[int] = [12, 24, 16, 5]
+const LAYER_SIZES : Array[int] = [10, 24, 16, 5]
 
 # Pesos y biases por capa.
 # weights[i] es una matriz [LAYER_SIZES[i+1]][LAYER_SIZES[i]]
@@ -53,6 +53,7 @@ func _initialize_weights() -> void:
 #  Retorna:   Array[float] de tamaño LAYER_SIZES[-1]
 # ─────────────────────────────────────────
 func forward(input_vec: Array) -> Array:
+	if len(input_vec) != LAYER_SIZES[0]: push_error("La cantidad de inputs debe ser igual a lo que pide la red. Red: ", LAYER_SIZES[0], "Inputs: ", len(input_vec))
 	activations.clear()
 	z_values.clear()
 	

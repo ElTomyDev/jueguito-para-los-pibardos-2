@@ -6,7 +6,7 @@ class_name NNPersistence
 #  archivo JSON en user:// (persistente entre runs)
 # ─────────────────────────────────────────
 
-const SAVE_PATH : String = "user://boss_brain.json"
+const SAVE_PATH : String = "res://assets/train_data/"
 
 # ─────────────────────────────────────────
 #  Guarda los pesos de la red en disco

@@ -32,7 +32,7 @@ var dir_hor: int = Vector2.AXIS_X # Vector que se encarga de manejar la direccio
 var player_id: int = 0
 
 func _ready() -> void:
-	init_player()
+	init_values()
 	controls.setup(self)
 	smooth_movement.setup(self)
 	adjustable_jump.setup(self)
@@ -46,7 +46,7 @@ func _physics_process(delta: float) -> void:
 	
 	move_and_slide()
 
-func init_player() -> void:
+func init_values() -> void:
 	GlobalVars.players.append(self)
 	health = initial_healt
 	viewport_size = get_viewport().get_visible_rect().size
