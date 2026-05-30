@@ -1,10 +1,10 @@
 extends Area2D
 class_name DamageArea
 
-var char:CharacterBody2D
+var character:CharacterBody2D
 
 func setup(body: CharacterBody2D) -> void:
-	char = body
+	character = body
 
 func apply_damage(damage:float) -> void:
-	char.health -= damage
+	character.health -= damage

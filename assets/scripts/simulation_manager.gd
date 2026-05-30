@@ -5,14 +5,6 @@ extends Node2D
 @export var boss_spawn          : Node2D
 @export var boss                : PackedScene
 
-# Constantes de normalización (deben coincidir con el viewport y los stats del boss/player)
-const VIEWPORT_W      : float = 800.0
-const VIEWPORT_H      : float = 320.0
-const MAX_BOSS_HEALTH : float = 10000.0
-const MAX_BOSS_DAMAGE : float = 200.0
-const MAX_PLR_HEALTH  : float = 1000.0
-const MAX_PHASES      : float = 4.0
-
 # ─────────────────────────────────────────
 #  Sistema de recompensas
 # ─────────────────────────────────────────
@@ -41,6 +33,7 @@ var prev_boss_dist     : float = 0.0
 func _ready() -> void:
 	_setup_nn()
 	spawn_entities()
+
 
 # ─────────────────────────────────────────
 #  Inicializa y carga la red neuronal
@@ -160,25 +153,11 @@ func _build_input_vec() -> Array:
 	var b  : BossController  = boss_instance
 	var np : PlayerController = b.near_player  # puede ser null
 	
-	var input_vec : Array = [
-		b.health            / MAX_BOSS_HEALTH,
-		b.total_damage      / MAX_BOSS_DAMAGE,
-		b.global_position.x / VIEWPORT_W,
-		b.global_position.y / VIEWPORT_H,
-		b.move_dir.x,                          # ya en [-1, 1]
-		b.move_dir.y,                          # ya en [-1, 1]
-		float(b.boss_pashe) / MAX_PHASES,
-	]
+	var input_vec : Array = b.stats_normalized()
 	
 	# Stats del jugador más cercano
 	if np:
-		input_vec.append_array([
-			np.health            / MAX_PLR_HEALTH,
-			np.global_position.x / VIEWPORT_W,
-			np.global_position.y / VIEWPORT_H,
-			np.global_position.x / VIEWPORT_W,  # near_player pos (redundante si es el mismo, útil con multi-player)
-			np.global_position.y / VIEWPORT_H,
-		])
+		input_vec.append_array(np.stats_normalized())
 	else:
 		input_vec.append_array([0.0, 0.0, 0.0, 0.0, 0.0])
 	

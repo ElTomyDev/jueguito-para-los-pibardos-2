@@ -34,5 +34,5 @@ func _set_bullet_values(bullet_instence: Bullet) -> void:
 	bullet_instence.speed = boss.bullet_speed
 	bullet_instence.life_time = boss.bullet_life_time
 	bullet_instence.dispersion = boss.bullet_dispersion
-	bullet_instence.damage = boss.total_damage
+	bullet_instence.damage = boss.damage
 	bullet_instence.group_target = "Players"

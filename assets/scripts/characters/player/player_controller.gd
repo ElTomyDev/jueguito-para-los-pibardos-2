@@ -1,6 +1,8 @@
 extends CharacterBody2D
 class_name PlayerController
 
+var viewport_size: Vector2
+
 # Obtencion, creacion e instanciacion de clases y nodos
 @onready var controls: PlayerControls = $PlayerMechanics/Controls as PlayerControls
 @onready var smooth_movement: PlayerSmoothMovement = $PlayerMechanics/SmoothMovement as PlayerSmoothMovement
@@ -10,8 +12,9 @@ class_name PlayerController
 @onready var gun: GunController = $Gun as GunController
 
 @export_category("Player Stats")
-@export var health: float = 1000.0
-@export var damage: float = 15.0
+@export var initial_healt: float = 1000.0
+@export var health: float = 0.0
+@export var damage: float = 55.0
 
 @export_category("Player settings")
 @export var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
@@ -29,7 +32,7 @@ var dir_hor: int = Vector2.AXIS_X # Vector que se encarga de manejar la direccio
 var player_id: int = 0
 
 func _ready() -> void:
-	GlobalVars.players.append(self)
+	init_player()
 	controls.setup(self)
 	smooth_movement.setup(self)
 	adjustable_jump.setup(self)
@@ -42,3 +45,15 @@ func _physics_process(delta: float) -> void:
 	adjustable_jump.update(delta)
 	
 	move_and_slide()
+
+func init_player() -> void:
+	GlobalVars.players.append(self)
+	health = initial_healt
+	viewport_size = get_viewport().get_visible_rect().size
+
+func stats_normalized() -> Array:
+	return [
+		health / initial_healt,
+		global_position.x / viewport_size.x,
+		global_position.y / viewport_size.y
+	]
