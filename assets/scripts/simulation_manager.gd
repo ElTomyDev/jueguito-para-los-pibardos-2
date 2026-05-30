@@ -13,6 +13,8 @@ const REWARD_SURVIVE_STEP    : float =  0.01  # Por sobrevivir un step
 const REWARD_WIN_EPISODE     : float =  50.0  # El boss mata al jugador
 const REWARD_LOSE_EPISODE    : float = -50.0  # El boss muere
 const REWARD_APPROACH_PLAYER : float =  0.005 # Por acercarse al jugador
+const REWARD_FOR_SURVIVE     : float = 0.002  # Por sobrevivir 
+const REWARD_DAMAGE_RECIBE   : float = 0.3    # Por recibir daño
 
 # ─────────────────────────────────────────
 #  Nodos de la NN (se instancian en _ready)
@@ -28,6 +30,7 @@ var player_instances: Array            = []
 # Estado del episodio
 var episode_running    : bool  = false
 var prev_player_health : float = 0.0
+var prev_boss_health : float = 0.0
 var prev_boss_dist     : float = 0.0
 
 # Contador de frames para debug
@@ -75,6 +78,7 @@ func start_simulation() -> void:
 	# Estado inicial del episodio
 	prev_player_health = _get_total_player_health()
 	prev_boss_dist     = _get_dist_boss_to_nearest_player()
+	prev_boss_health = boss_instance.health
 	episode_running    = true
 
 func clean_entities() -> void:
@@ -130,7 +134,7 @@ func _physics_process(_delta: float) -> void:
 	# Actualiza estado previo para el próximo step
 	prev_player_health = _get_total_player_health()
 	prev_boss_dist     = _get_dist_boss_to_nearest_player()
-
+	prev_boss_health = boss_instance.health if is_instance_valid(boss_instance) else 0.0
 # ─────────────────────────────────────────
 #  Chequea si el episodio terminó
 # ─────────────────────────────────────────
@@ -200,10 +204,17 @@ func _compute_step_reward() -> float:
 		reward += damage_dealt * REWARD_DAMAGE_DEALT
 	
 	# Recompensa por acercarse al jugador
-	var current_dist : float = _get_dist_boss_to_nearest_player()
-	if current_dist < prev_boss_dist:
-		reward += REWARD_APPROACH_PLAYER
+	#var current_dist : float = _get_dist_boss_to_nearest_player()
+	#if current_dist < prev_boss_dist:
+	#	reward += REWARD_APPROACH_PLAYER
 	
+	# Recompensa por esquivar: si el boss no recibió daño este step, pequeña recompensa
+# Solo cuando hay balas del jugador cerca, sino es trivial
+	var damage_received : float = prev_boss_health - boss_instance.health
+	if damage_received > 0.0:
+		reward -= damage_received * REWARD_DAMAGE_RECIBE  # penalización por recibir daño
+	elif is_instance_valid(boss_instance.near_bullet):
+		reward += 0.008  # esquivó activamente (había bala cerca y no le pegó)
 	return reward
 
 # ─────────────────────────────────────────
