@@ -25,6 +25,7 @@ func _shot() -> void:
 	var bullet_instance = bullet.instantiate()
 	_set_bullet_values(bullet_instance)
 	get_parent().get_parent().get_parent().add_child(bullet_instance)
+	boss.damage = boss.base_damage # Reinicia el daño
 
 func _set_bullet_values(bullet_instence: Bullet) -> void:
 	if !(bullet_instence is Bullet): push_error("'bullet_instance' debe ser una bala.")

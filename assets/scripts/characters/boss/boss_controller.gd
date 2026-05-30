@@ -7,7 +7,7 @@ class_name BossController
 
 @export_category("Boss Stats")
 @export var health: float = 10000.0
-@export var damage: float = 56.1
+@export var base_damage = 50.0
 @export var damage_increment: float = 0.01
 
 @export_category("Attack Config")
@@ -32,11 +32,13 @@ var boss_actions: Dictionary={
 	1: func(): _ball_attack_action()
 }
 var current_action: int = 0
+var damage: float
 var total_damage: float
 var move_dir: Vector2 = Vector2.ZERO
 var near_player: PlayerController
 
 func _ready() -> void:
+	damage = base_damage
 	total_damage = bullet_damage + damage
 	floating_movement.setup(self)
 	ball_attack.setup(self)
@@ -121,4 +123,5 @@ func _nothing_action() -> void:
 		damage += damage_increment # incrementa el daño
 
 func _ball_attack_action() -> void:
-	Utils.view_to(global_position, shot_dir, rotation_speed, self)
+	var shot_point = global_position + shot_dir * 100.0
+	Utils.view_to(global_position, shot_point, rotation_speed, self)

@@ -1,25 +1,20 @@
-[gd_scene load_steps=4 format=3 uid="uid://beeao680qoeeb"]
+[gd_scene load_steps=6 format=3 uid="uid://beeao680qoeeb"]
 
-[ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="1_qbvmm"]
 [ext_resource type="PackedScene" uid="uid://bi11g54osr03a" path="res://assets/scenes/simulation_manager.tscn" id="2_qbvmm"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_3ngay"]
-size = Vector2(799.75, 6)
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_3hma4"]
+size = Vector2(20, 320)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_qbvmm"]
+size = Vector2(820, 20)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_56x64"]
+size = Vector2(27, 340)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_j1tjx"]
+size = Vector2(847, 20)
 
 [node name="test" type="Node2D"]
-
-[node name="floor-no-img" type="StaticBody2D" parent="."]
-collision_layer = 8
-collision_mask = 0
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="floor-no-img"]
-position = Vector2(399.875, 323)
-shape = SubResource("RectangleShape2D_3ngay")
-
-[node name="Sprite2D" type="Sprite2D" parent="floor-no-img"]
-position = Vector2(400, 323)
-scale = Vector2(6.25, 0.04687503)
-texture = ExtResource("1_qbvmm")
 
 [node name="SimulationManager" parent="." instance=ExtResource("2_qbvmm")]
 
@@ -28,5 +23,25 @@ position = Vector2(189, 160)
 
 [node name="SpawnBoss" parent="SimulationManager" index="1"]
 position = Vector2(519, 113)
+
+[node name="MapLimits" type="StaticBody2D" parent="."]
+collision_layer = 8
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="MapLimits"]
+position = Vector2(-10, 160)
+shape = SubResource("RectangleShape2D_3hma4")
+
+[node name="CollisionShape2D2" type="CollisionShape2D" parent="MapLimits"]
+position = Vector2(390, 330)
+shape = SubResource("RectangleShape2D_qbvmm")
+
+[node name="CollisionShape2D3" type="CollisionShape2D" parent="MapLimits"]
+position = Vector2(813.5, 170)
+shape = SubResource("RectangleShape2D_56x64")
+
+[node name="CollisionShape2D4" type="CollisionShape2D" parent="MapLimits"]
+position = Vector2(403.5, -10)
+shape = SubResource("RectangleShape2D_j1tjx")
 
 [editable path="SimulationManager"]
