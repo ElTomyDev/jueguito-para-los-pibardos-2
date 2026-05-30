@@ -12,7 +12,7 @@
 radius = 908.2665
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_5dy75"]
-radius = 102.044106
+radius = 68.46897
 
 [node name="BossController" type="CharacterBody2D" groups=["Boss"]]
 collision_layer = 2

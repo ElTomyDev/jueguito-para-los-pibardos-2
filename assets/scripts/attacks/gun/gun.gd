@@ -58,6 +58,7 @@ func _set_bullet_values(bullet_instence: Bullet) -> void:
 	bullet_instence.damage = _get_total_bullet_damage()
 	bullet_instence.group_target = "Boss"
 	bullet_instence.from_group = "Players"
+	
 
 func _get_total_bullet_damage() -> float:
 	return gun_damage if not character else gun_damage + character.damage

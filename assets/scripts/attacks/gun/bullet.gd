@@ -1,6 +1,8 @@
 extends Node2D
 class_name Bullet
 
+var bullet_color: Color = Color.RED
+
 var speed: float
 var life_time: float
 var dispersion: float
@@ -38,7 +40,7 @@ func _dead_if_can(delta: float) -> void:
 	life_time -= delta
 
 func _draw() -> void:
-	draw_line(Vector2.ZERO, Vector2(8,0), Color.CRIMSON, 3)
+	draw_line(Vector2.ZERO, Vector2(8,0), bullet_color, 3.5)
 
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group(group_target):

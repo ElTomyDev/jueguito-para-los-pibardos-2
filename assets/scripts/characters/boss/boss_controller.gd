@@ -80,10 +80,10 @@ func update_boss() -> void:
 	
 	# Actualiza la direccion de movimiento (entre -1 y 1) 
 	# Obtiene la direccion del output de la red que es una lista [x,y] en un diccionario global
-	if not GlobalVars.nn_outputs.is_empty():
-		move_dir = Vector2(GlobalVars.nn_outputs['move_dir'][0], GlobalVars.nn_outputs['move_dir'][1]).normalized()
-		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
-		current_action = GlobalVars.nn_outputs['current_action']
+	#if not GlobalVars.nn_outputs.is_empty():
+	move_dir = Vector2(GlobalVars.nn_outputs['move_dir'][0], GlobalVars.nn_outputs['move_dir'][1]).normalized()
+	shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
+	current_action = GlobalVars.nn_outputs['current_action']
 	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
@@ -114,6 +114,7 @@ func _get_near_bullet() -> Bullet:
 	var min_dist = INF
 	
 	for bullet in bullets:
+		if bullet.from_group == "Boss": continue
 		var dist = global_position.distance_to(bullet.global_position)
 		if dist < min_dist:
 			min_dist = dist
