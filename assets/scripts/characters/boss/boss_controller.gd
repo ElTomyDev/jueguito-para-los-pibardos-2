@@ -25,10 +25,13 @@ class_name BossController
 @export var acceleration_speed : float = 15.0 
 @export var deceleration_speed : float  = 10.0
 
-var shot_dir:Vector2
+var shot_dir: Vector2
 var boss_pashe: int = 0
-var boss_states: Dictionary={}
-var current_state: int = 0
+var boss_actions: Dictionary={
+	0: func(): _nothing_action(),
+	1: func(): _ball_attack_action()
+}
+var current_action: int = 0
 var total_damage: float
 var move_dir: Vector2 = Vector2.ZERO
 var near_player: PlayerController
@@ -40,18 +43,13 @@ func _ready() -> void:
 	damage_area.setup(self)
 
 func _process(delta: float) -> void:
-	update_boss_values_by_nn()
-	_update_boss_info()
 	update_boss()
 
 func _physics_process(delta: float) -> void:
+	update_action()
 	floating_movement.update(delta)
 	ball_attack.update(delta)
-	update_actions_by_state()
 	move_and_slide()
-
-func _update_boss_info() -> void:
-	GlobalVars.boss_health = health
 
 func inputs() -> Array:
 	return [
@@ -64,27 +62,22 @@ func inputs() -> Array:
 		boss_pashe
 	] + _get_players_stats()
 
-func update_boss_values_by_nn() -> void:
+func update_boss() -> void:
+	dead_if_can()
+	
 	# Actualiza la direccion de movimiento (entre -1 y 1) 
 	# Obtiene la direccion del output de la red que es una lista [x,y] en un diccionario global
 	if not GlobalVars.nn_outputs.is_empty():
 		move_dir = Vector2(GlobalVars.nn_outputs['move_dir'][0], GlobalVars.nn_outputs['move_dir'][1]).normalized()
 		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
-		current_state = GlobalVars.nn_outputs['current_state']
-
-func update_boss() -> void:
-	_dead_if_can()
+		current_action = GlobalVars.nn_outputs['current_action']
+	
 	near_player = _get_near_player()
+	
+	# Actualiza la variable global
+	GlobalVars.boss_health = health
 
-func update_actions_by_state() -> void:
-	if current_state == 0:
-		if near_player:
-			Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
-		damage += damage_increment # incrementa el daño
-	elif  current_state == 1:
-		Utils.view_to(global_position, shot_dir, rotation_speed, self)
-
-func _dead_if_can() -> void:
+func dead_if_can() -> void:
 	if health <= 0:
 		queue_free()
 
@@ -114,4 +107,18 @@ func _get_near_player() -> CharacterBody2D:
 	return near
 
 func can_shot() -> bool:
-	return current_state == 1 # Dispara solo en su estado de ataque de disparo
+	return current_action == 1 # Dispara solo en su estado de ataque de disparo
+
+# ----------------
+# --- Acciones ---
+# ----------------
+func update_action() -> void:
+	boss_actions[current_action].call()
+
+func _nothing_action() -> void:
+	if near_player:
+		Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
+		damage += damage_increment # incrementa el daño
+
+func _ball_attack_action() -> void:
+	Utils.view_to(global_position, shot_dir, rotation_speed, self)
