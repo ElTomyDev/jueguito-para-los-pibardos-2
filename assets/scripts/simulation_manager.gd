@@ -30,6 +30,9 @@ var episode_running    : bool  = false
 var prev_player_health : float = 0.0
 var prev_boss_dist     : float = 0.0
 
+# Contador de frames para debug
+var _debug_frame_count : int = 0 
+
 func _ready() -> void:
 	_setup_nn()
 	start_simulation()
@@ -54,6 +57,7 @@ func _setup_nn() -> void:
 #  Spawn de entidades
 # ─────────────────────────────────────────
 func start_simulation() -> void:
+	_debug_frame_count = 0
 	clean_entities()
 	
 	# Spawnea jugadores
@@ -112,6 +116,17 @@ func _physics_process(_delta: float) -> void:
 	# Actualiza GlobalVars con el output de la red
 	_apply_nn_output(output)
 	
+	# Debug: imprime inputs y outputs los primeros 3 frames de cada episodio
+	_debug_frame_count += 1
+	if _debug_frame_count <= 3:
+		print("=== FRAME ", _debug_frame_count, " ===")
+		print("INPUT VEC (", input_vec.size(), " valores): ", input_vec)
+		print("OUTPUT raw: ", output)
+		print("  move_dir  → ", GlobalVars.nn_outputs['move_dir'])
+		print("  shot_dir  → ", GlobalVars.nn_outputs['shot_dir'])
+		print("  action    → ", GlobalVars.nn_outputs['current_action'])
+		print("  reward    → ", reward)
+	
 	# Actualiza estado previo para el próximo step
 	prev_player_health = _get_total_player_health()
 	prev_boss_dist     = _get_dist_boss_to_nearest_player()
@@ -164,11 +179,11 @@ func _build_input_vec() -> Array:
 	else:
 		input_vec.append_array([0.0, 0.0, 0.0])
 	
-	return input_vec  # 12 valores
+	return input_vec 
 
 func _zero_input_vec() -> Array:
 	var v : Array = []
-	for _i in range(12):
+	for _i in range(10):
 		v.append(0.0)
 	return v
 
