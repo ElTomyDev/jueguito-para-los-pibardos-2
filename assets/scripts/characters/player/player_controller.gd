@@ -39,6 +39,9 @@ func _ready() -> void:
 	damage_area.setup(self)
 	gun.setup(self)
 
+func _process(delta: float) -> void:
+	dead_if_can()
+
 func _physics_process(delta: float) -> void:
 	controls.update()
 	smooth_movement.update(delta)
@@ -57,3 +60,8 @@ func stats_normalized() -> Array:
 		global_position.x / viewport_size.x,
 		global_position.y / viewport_size.y
 	]
+
+func dead_if_can() -> void:
+	if health <= 0.0:
+		queue_free()
+		GlobalVars.players.pop_at(GlobalVars.players.find(self))

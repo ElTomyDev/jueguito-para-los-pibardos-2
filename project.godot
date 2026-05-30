@@ -30,6 +30,7 @@ window/size/viewport_height=320
 Atacks=""
 Boss=""
 Players=""
+Bullets=""
 
 [input]
 

@@ -7,6 +7,7 @@ var dispersion: float
 var dir_to_mirror: Vector2
 var damage: float
 
+var from_group: StringName
 var group_target: StringName
 var target:Area2D = null
 

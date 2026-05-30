@@ -36,3 +36,4 @@ func _set_bullet_values(bullet_instence: Bullet) -> void:
 	bullet_instence.dispersion = boss.bullet_dispersion
 	bullet_instence.damage = boss.damage
 	bullet_instence.group_target = "Players"
+	bullet_instence.from_group = "Boss"

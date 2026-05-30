@@ -9,7 +9,7 @@ var viewport_size: Vector2
 
 @export_category("Boss Stats")
 @export var initial_health: float = 10000.0
-@export var base_damage = 50.0
+@export var base_damage = 200.0
 @export var damage_increment: float = 0.5
 @export var max_damage: float = 500.0
 @export var max_phases: int = 2
@@ -37,6 +37,7 @@ var move_dir: Vector2 = Vector2.ZERO
 var shot_dir: Vector2
 
 var near_player: PlayerController
+var near_bullet: Bullet
 
 # Estadisticas
 var health: float
@@ -66,8 +67,8 @@ func stats_normalized() -> Array:
 		self.global_position.y / viewport_size.y,
 		velocity.x / max_speed,  # estado físico real, no output de la red
 		velocity.y / max_speed,
-		float(boss_pashe) / max_phases,
-	]
+		float(boss_pashe) / max_phases
+	] + _get_near_bullet_norm_position()
 
 func init_values() -> void:
 	viewport_size = get_viewport().get_visible_rect().size
@@ -84,6 +85,7 @@ func update_boss() -> void:
 		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
 		current_action = GlobalVars.nn_outputs['current_action']
 	
+	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
 	
 	# Actualiza la variable global
@@ -93,8 +95,8 @@ func dead_if_can() -> void:
 	if health <= 0:
 		queue_free()
 
-func _get_near_player() -> CharacterBody2D:
-	if not GlobalVars.players:return
+func _get_near_player() -> PlayerController:
+	if GlobalVars.players.is_empty(): return null
 	var near: PlayerController = null
 	var min_dist = INF
 	
@@ -104,6 +106,27 @@ func _get_near_player() -> CharacterBody2D:
 			min_dist = dist
 			near = player
 	return near
+
+func _get_near_bullet() -> Bullet:
+	var bullets: Array = get_tree().get_nodes_in_group("Bullets")
+	if bullets.is_empty(): return null
+	var near: Bullet = null
+	var min_dist = INF
+	
+	for bullet in bullets:
+		var dist = global_position.distance_to(bullet.global_position)
+		if dist < min_dist:
+			min_dist = dist
+			near = bullet
+	return near
+
+func _get_near_bullet_norm_position() -> Array:
+	if near_bullet:
+		return [
+			near_bullet.global_position.x / viewport_size.x,
+			near_bullet.global_position.y / viewport_size.y,
+		]
+	return [0.0, 0.0]
 
 func can_shot() -> bool:
 	return current_action == 1 # Dispara solo en su estado de ataque de disparo

@@ -183,7 +183,7 @@ func _build_input_vec() -> Array:
 
 func _zero_input_vec() -> Array:
 	var v : Array = []
-	for _i in range(10):
+	for _i in range(12):
 		v.append(0.0)
 	return v
 
