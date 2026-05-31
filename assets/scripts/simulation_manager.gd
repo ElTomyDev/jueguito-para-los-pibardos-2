@@ -13,7 +13,7 @@ const REWARD_SURVIVE_STEP    : float =  0.01  # Por sobrevivir un step
 const REWARD_WIN_EPISODE     : float =  50.0  # El boss mata al jugador
 const REWARD_LOSE_EPISODE    : float = -50.0  # El boss muere
 const REWARD_APPROACH_PLAYER : float =  0.005 # Por acercarse al jugador
-const REWARD_FOR_SURVIVE     : float = 0.002  # Por sobrevivir 
+const REWARD_FOR_SURVIVE     : float = 0.0001  # Por sobrevivir 
 const REWARD_DAMAGE_RECIBE   : float = 0.3    # Por recibir daño
 
 # ─────────────────────────────────────────
@@ -123,13 +123,14 @@ func _physics_process(_delta: float) -> void:
 	# Debug: imprime inputs y outputs los primeros 3 frames de cada episodio
 	_debug_frame_count += 1
 	if _debug_frame_count <= 3:
-		print("=== FRAME ", _debug_frame_count, " ===")
-		print("INPUT VEC (", input_vec.size(), " valores): ", input_vec)
-		print("OUTPUT raw: ", output)
-		print("  move_dir  → ", GlobalVars.nn_outputs['move_dir'])
-		print("  shot_dir  → ", GlobalVars.nn_outputs['shot_dir'])
-		print("  action    → ", GlobalVars.nn_outputs['current_action'])
-		print("  reward    → ", reward)
+		pass
+		#print("=== FRAME ", _debug_frame_count, " ===")
+		#print("INPUT VEC (", input_vec.size(), " valores): ", input_vec)
+		#print("OUTPUT raw: ", output)
+		#print("  move_dir  → ", GlobalVars.nn_outputs['move_dir'])
+		#print("  shot_dir  → ", GlobalVars.nn_outputs['shot_dir'])
+		#print("  action    → ", GlobalVars.nn_outputs['current_action'])
+		#print("  reward    → ", reward)
 	
 	# Actualiza estado previo para el próximo step
 	prev_player_health = _get_total_player_health()

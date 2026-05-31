@@ -14,7 +14,7 @@ var viewport_size: Vector2
 @export_category("Player Stats")
 @export var initial_healt: float = 1000.0
 @export var health: float = 0.0
-@export var damage: float = 100.0
+@export var damage: float = 200.0
 
 @export_category("Player settings")
 @export var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
