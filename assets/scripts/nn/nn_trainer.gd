@@ -15,15 +15,15 @@ class_name NNTrainer
 
 const GAMMA         : float = 0.99   # Factor de descuento
 const LEARNING_RATE : float = 0.001  # Tasa de aprendizaje
-
+const EXPLORATION_SIGMA : float = 0.3  # ruido de exploración, bajás con el tiempo
 # Referencia a la red
 var nn : NeuralNetwork
 
 # Buffers del episodio actual
-var episode_inputs   : Array = []  # Array de Array[float]
-var episode_outputs  : Array = []  # Array de Array[float] (outputs crudos de la red)
-var episode_rewards  : Array = []  # Array de float
-
+var episode_inputs   : Array = [] 
+var episode_outputs  : Array = []  # outputs crudos de la red
+var episode_rewards  : Array = []
+var episode_actions  : Array = []
 # Métricas del episodio (útil para debug / UI)
 var total_reward_last_episode : float = 0.0
 var episode_count             : int   = 0
@@ -38,13 +38,20 @@ func setup(network: NeuralNetwork) -> void:
 #  Retorna:     output de la red (move_dir, shot_dir, action)
 # ─────────────────────────────────────────
 func step(input_vec: Array, reward: float) -> Array:
-	var output : Array = nn.forward(input_vec)
+	var raw_output : Array = nn.forward(input_vec)
 	
+	# Acción explorada con ruido gaussiano para outputs continuos (0-3)
+	var action : Array = []
+	for i in range(4):
+		var noise : float = randfn(0.0, EXPLORATION_SIGMA)
+		action.append(clampf(raw_output[i] + noise, -1.0, 1.0))
+		
 	episode_inputs.append(input_vec.duplicate())
-	episode_outputs.append(output.duplicate())
+	episode_outputs.append(raw_output.duplicate())  # guarda el output SIN ruido
+	episode_actions.append(action.duplicate())      # guarda la acción CON ruido
 	episode_rewards.append(reward)
 	
-	return output
+	return action  # devolvés la acción con exploración
 
 # ─────────────────────────────────────────
 #  Llamar al final del episodio (cuando muere el boss o el jugador)
@@ -72,13 +79,12 @@ func _update_network() -> void:
 	_normalize_returns(returns)
 	
 	for t in range(episode_inputs.size()):
-		# Re-ejecutamos el forward para restaurar activaciones en la red
 		nn.forward(episode_inputs[t])
-		
-		# Gradiente de política: -G_t * d_log_pi/d_theta
-		# Para outputs continuos (tanh): gradiente = -G_t * (target - output)
-		# Usamos el output actual como "target" desplazado por el retorno
-		var grad : Array = _compute_policy_gradient(episode_outputs[t], returns[t])
+		var grad : Array = _compute_policy_gradient(
+			episode_outputs[t],
+			episode_actions[t],  # acción explorada
+			returns[t]
+		)
 		nn.backward(grad, LEARNING_RATE)
 
 # ─────────────────────────────────────────
@@ -130,22 +136,18 @@ func _normalize_returns(returns: Array) -> void:
 #  Para el output discreto (current_action via sigmoid):
 #    Usamos el gradiente de log-probabilidad de Bernoulli.
 # ─────────────────────────────────────────
-func _compute_policy_gradient(outputs: Array, g_t: float) -> Array:
+func _compute_policy_gradient(raw_output: Array, action: Array, g_t: float) -> Array:
 	var grad : Array = []
 	
-	# Outputs 0-3: direcciones continuas (tanh)
+	# Outputs 0-3: gradiente de log π = (accion - output) / sigma²
 	for i in range(4):
-		# Gradiente = -G_t * output (política gaussiana simplificada)
-		# Si G_t > 0: refuerza la acción tomada
-		# Si G_t < 0: penaliza la acción tomada
-		grad.append(-g_t * outputs[i])
+		grad.append(-g_t * (action[i] - raw_output[i]) / (EXPLORATION_SIGMA * EXPLORATION_SIGMA))
 	
-	# Output 4: acción discreta (sigmoid → Bernoulli)
-	# grad = -(G_t * (1 - p)) si acción=1, -(G_t * (-p)) si acción=0
-	var p      : float = outputs[4]          # probabilidad de acción=1
-	var action : int   = 1 if p >= 0.5 else 0
+	# Output 4: Bernoulli sin cambios
+	var p : float = raw_output[4]
+	var taken_action : int = 1 if action[4] >= 0.5 else 0
 	var bernoulli_grad : float
-	if action == 1:
+	if taken_action == 1:
 		bernoulli_grad = -g_t * (1.0 - p)
 	else:
 		bernoulli_grad = g_t * p
@@ -156,4 +158,5 @@ func _compute_policy_gradient(outputs: Array, g_t: float) -> Array:
 func _clear_buffers() -> void:
 	episode_inputs.clear()
 	episode_outputs.clear()
+	episode_actions.clear()
 	episode_rewards.clear()
