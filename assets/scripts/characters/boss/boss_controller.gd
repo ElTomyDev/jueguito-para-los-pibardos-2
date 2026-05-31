@@ -9,14 +9,14 @@ var viewport_size: Vector2
 
 @export_category("Boss Stats")
 @export var initial_health: float = 10000.0
-@export var base_damage = 350.0
+@export var base_damage = 100.0
 @export var damage_increment: float = 0.1
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
-@export var rotation_speed: float = 10.0
-@export var fire_rate: float = 0.3
+@export var rotation_speed: float = 25.0
+@export var fire_rate: float = 0.05
 
 @export_category("Bullet Settings")
 @export var bullet_speed: float = 580.0
@@ -67,6 +67,8 @@ func stats_normalized() -> Array:
 		self.global_position.y / viewport_size.y,
 		velocity.x / max_speed,  # estado físico real, no output de la red
 		velocity.y / max_speed,
+		shot_dir.x / viewport_size.x,
+		shot_dir.y / viewport_size.y,
 		float(boss_pashe) / max_phases
 	] + _get_near_bullet_norm_position()
 
@@ -82,7 +84,7 @@ func update_boss() -> void:
 	# Obtiene la direccion del output de la red que es una lista [x,y] en un diccionario global
 	if not GlobalVars.nn_outputs.is_empty():
 		move_dir = Vector2(GlobalVars.nn_outputs['move_dir'][0], GlobalVars.nn_outputs['move_dir'][1]).normalized()
-		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
+		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1])
 		current_action = GlobalVars.nn_outputs['current_action']
 	
 	near_bullet = _get_near_bullet()
@@ -144,5 +146,5 @@ func _nothing_action() -> void:
 		damage = min(max_damage, damage + damage_increment) # incrementa el daño
 
 func _ball_attack_action() -> void:
-	var shot_point = global_position + shot_dir * 100.0
-	Utils.view_to(global_position, shot_point, rotation_speed, self)
+	#var shot_point = global_position + shot_dir * 100.0
+	Utils.view_to(global_position, shot_dir, rotation_speed, self, false)

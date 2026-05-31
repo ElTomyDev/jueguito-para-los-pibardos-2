@@ -1,5 +1,9 @@
 extends Node2D
 
+var viewport_size: Vector2
+
+@export var force_attack_mode: bool = true # No deja que la ia decida el ataque
+@export var force_attack: int = 1 # Ataque a forzar
 @export var players             : Array[PackedScene]
 @export var spawn_player_points : Array[Node2D]
 @export var boss_spawn          : Node2D
@@ -8,15 +12,15 @@ extends Node2D
 # ─────────────────────────────────────────
 #  Sistema de recompensas
 # ─────────────────────────────────────────
-const REWARD_DAMAGE_DEALT    : float =  0.01   # Por cada punto de daño hecho al jugador
-const REWARD_SURVIVE_STEP    : float =  0.01  # Por sobrevivir un step
-const REWARD_WIN_EPISODE     : float =  100.0  # El boss mata al jugador
-const REWARD_LOSE_EPISODE    : float = -30.0  # El boss muere
-const REWARD_APPROACH_PLAYER : float =  0.005 # Por acercarse al jugador
-const REWARD_FOR_SURVIVE     : float = 0.05  # Por sobrevivir 
-const REWARD_DODGE_BULLET    : float = 0.05 # Por esquivar balas
-const REWARD_DAMAGE_RECIBE   : float = 0.03    # Por recibir daño
-
+const REWARD_DAMAGE_DEALT    : float =  0.02   # Por cada punto de daño hecho al jugador
+const REWARD_SURVIVE_STEP    : float =  0.01   # Por sobrevivir un step
+const REWARD_WIN_EPISODE     : float =  150.0  # El boss mata al jugador
+const REWARD_LOSE_EPISODE    : float = -30.0   # El boss muere
+const REWARD_APPROACH_PLAYER : float =  0.005  # Por acercarse al jugador
+const REWARD_FOR_SURVIVE     : float = 0.0001    # Por sobrevivir 
+const REWARD_DODGE_BULLET    : float = 0.008   # Por esquivar balas
+const REWARD_DAMAGE_RECIBE   : float = 0.1    # Por recibir daño
+const REWARD_POINT_PLAYER     : float = 0.05   # Por apuntar hacia el jugador
 # ─────────────────────────────────────────
 #  Nodos de la NN (se instancian en _ready)
 # ─────────────────────────────────────────
@@ -38,9 +42,9 @@ var prev_boss_dist     : float = 0.0
 var _debug_frame_count : int = 0 
 
 func _ready() -> void:
+	viewport_size = get_viewport().get_visible_rect().size
 	_setup_nn()
 	start_simulation()
-
 
 # ─────────────────────────────────────────
 #  Inicializa y carga la red neuronal
@@ -67,13 +71,14 @@ func start_simulation() -> void:
 	# Spawnea jugadores
 	for idx in range(players.size()):
 		var player_instance = players[idx].instantiate()
-		player_instance.global_position = spawn_player_points[idx].global_position
+		player_instance.global_position = Vector2(randf_range(0.0,viewport_size.x), randf_range(0.0, viewport_size.y))
+		#player_instance.global_position = spawn_player_points[idx].global_position
 		add_child(player_instance)
 		player_instances.append(player_instance)
 	
 	# Spawnea boss
 	boss_instance = boss.instantiate()
-	boss_instance.global_position = boss_spawn.global_position
+	boss_instance.global_position = Vector2(randf_range(0.0,viewport_size.x), randf_range(0.0, viewport_size.y))
 	add_child(boss_instance)
 	
 	# Estado inicial del episodio
@@ -216,6 +221,14 @@ func _compute_step_reward() -> float:
 		reward -= damage_received * REWARD_DAMAGE_RECIBE  # 200 × 0.05 = 10.0
 	elif is_instance_valid(boss_instance.near_bullet): # Esquivar activamente
 		reward += REWARD_DODGE_BULLET
+	
+	# Recompensa por apuntar hacia el jugador cuando está en modo disparo
+	if is_instance_valid(boss_instance) and is_instance_valid(boss_instance.near_player):
+		var to_player : Vector2 = (boss_instance.near_player.global_position - boss_instance.global_position).normalized()
+		var alignment : float = to_player.dot(boss_instance.shot_dir)  # entre -1 y 1
+		if boss_instance.current_action == 1:
+			reward += alignment * REWARD_POINT_PLAYER  # refuerza apuntar en la dirección correcta
+	
 	return reward
 
 # ─────────────────────────────────────────
@@ -226,7 +239,7 @@ func _apply_nn_output(output: Array) -> void:
 	GlobalVars.nn_outputs = {
 		"move_dir"      : [output[0], output[1]],
 		"shot_dir"      : [output[2], output[3]],
-		"current_action": 1 if output[4] >= 0.5 else 0,
+		"current_action": force_attack if force_attack_mode else (1 if output[4] >= 0.5 else 0),
 	}
 
 # ─────────────────────────────────────────
