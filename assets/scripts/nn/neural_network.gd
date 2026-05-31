@@ -8,7 +8,7 @@ class_name NeuralNetwork
 #                sigmoid en output 4  (accion discreta)
 # ─────────────────────────────────────────
 
-const LAYER_SIZES : Array[int] = [12, 48, 32, 5]
+const LAYER_SIZES : Array[int] = [12, 24, 16, 5]
 
 # Pesos y biases por capa.
 # weights[i] es una matriz [LAYER_SIZES[i+1]][LAYER_SIZES[i]]

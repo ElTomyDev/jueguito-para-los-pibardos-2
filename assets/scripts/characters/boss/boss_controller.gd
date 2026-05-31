@@ -9,14 +9,14 @@ var viewport_size: Vector2
 
 @export_category("Boss Stats")
 @export var initial_health: float = 10000.0
-@export var base_damage = 1000.0
-@export var damage_increment: float = 0.5
+@export var base_damage = 350.0
+@export var damage_increment: float = 0.1
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
 @export var rotation_speed: float = 10.0
-@export var fire_rate: float = 0.5
+@export var fire_rate: float = 0.3
 
 @export_category("Bullet Settings")
 @export var bullet_speed: float = 580.0
