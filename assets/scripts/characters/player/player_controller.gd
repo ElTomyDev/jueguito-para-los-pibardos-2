@@ -39,6 +39,7 @@ func _ready() -> void:
 	damage_area.setup(self)
 	gun.setup(self)
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	dead_if_can()
 

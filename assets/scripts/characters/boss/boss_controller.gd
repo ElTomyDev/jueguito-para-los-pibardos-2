@@ -15,7 +15,7 @@ var viewport_size: Vector2
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
-@export var rotation_speed: float = 25.0
+@export var rotation_speed: float = 5.0
 @export var fire_rate: float = 0.1
 
 @export_category("Bullet Settings")

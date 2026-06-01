@@ -12,15 +12,14 @@ var viewport_size: Vector2
 # ─────────────────────────────────────────
 #  Sistema de recompensas
 # ─────────────────────────────────────────
-const REWARD_DAMAGE_DEALT    : float =  0.02   # Por cada punto de daño hecho al jugador
+const REWARD_DAMAGE_DEALT    : float =  0.05   # Por cada punto de daño hecho al jugador
 const REWARD_SURVIVE_STEP    : float =  0.01   # Por sobrevivir un step
 const REWARD_WIN_EPISODE     : float =  150.0  # El boss mata al jugador
 const REWARD_LOSE_EPISODE    : float = -30.0   # El boss muere
-const REWARD_APPROACH_PLAYER : float =  0.005  # Por acercarse al jugador
 const REWARD_FOR_SURVIVE     : float = 0.0001    # Por sobrevivir 
-const REWARD_DODGE_BULLET    : float = 0.008   # Por esquivar balas
+const REWARD_DODGE_BULLET    : float = 0.009   # Por esquivar balas
 const REWARD_DAMAGE_RECIBE   : float = 0.1    # Por recibir daño
-const REWARD_POINT_PLAYER     : float = 0.05   # Por apuntar hacia el jugador
+const REWARD_POINT_PLAYER     : float = 0.2   # Por apuntar hacia el jugador
 # ─────────────────────────────────────────
 #  Nodos de la NN (se instancian en _ready)
 # ─────────────────────────────────────────
@@ -205,8 +204,8 @@ func _compute_step_reward() -> float:
 	var reward : float = REWARD_SURVIVE_STEP
 	
 	# Recompensa por estar vivo
-	if prev_boss_health > 0.0:
-		reward += REWARD_FOR_SURVIVE
+	#if prev_boss_health > 0.0:
+	#	reward += REWARD_FOR_SURVIVE
 	
 	# Recompensa por dañar al jugador este step
 	var current_player_health : float = _get_total_player_health()

@@ -145,6 +145,7 @@ func _compute_policy_gradient(raw_output: Array, action: Array, g_t: float) -> A
 	
 	# Output 4: Bernoulli sin cambios
 	var p : float = raw_output[4]
+	
 	var taken_action : int = 1 if action[4] >= 0.5 else 0
 	var bernoulli_grad : float
 	if taken_action == 1:
