@@ -3,13 +3,14 @@ class_name BossController
 
 var viewport_size: Vector2 
 
+# Componentes mecánicos (asegurate de que los paths a los nodos hijos sean los correctos en tu escena)
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
 @onready var ball_attack: BallAttack = $BossMechanics/BallAttack as BallAttack
 
 @export_category("Boss Stats")
 @export var initial_health: float = 10000.0
-@export var base_damage = 100.0
+@export var base_damage: float = 100.0
 @export var damage_increment: float = 0.1
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2
@@ -25,115 +26,109 @@ var viewport_size: Vector2
 
 @export_category("Movement Parameters")
 @export var max_speed: float = 150.0
-@export var acceleration_speed : float = 15.0 
-@export var deceleration_speed : float  = 10.0
+@export var acceleration_speed: float = 15.0 
+@export var deceleration_speed: float = 10.0
 
-var boss_actions: Dictionary={
+# Mapeo de acciones discretas decididas por la red neuronal
+var boss_actions: Dictionary = {
 	0: func(): _nothing_action(),
 	1: func(): _ball_attack_action()
 }
+
 var current_action: int = 0
 var move_dir: Vector2 = Vector2.ZERO
-var shot_dir: Vector2
+var shot_angle: float = 0.0
+var damage: float = 0.0
+var health: float = 0.0
 
-var near_player: PlayerController
-var near_bullet: Bullet
-
-# Estadisticas
-var health: float
-var damage: float
-var boss_pashe: int = 0
+# Referencias de entorno para los inputs de la simulación
+var near_player: PlayerController = null
+var near_bullet: Bullet = null
 
 func _ready() -> void:
-	init_values()
-	floating_movement.setup(self)
-	ball_attack.setup(self)
 	damage_area.setup(self)
+	init_values()
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
-	update_boss()
+	dead_if_can()
 
 func _physics_process(delta: float) -> void:
-	update_action()
-	floating_movement.update(delta)
-	ball_attack.update(delta)
-	move_and_slide()
-
-func stats_normalized() -> Array:
-	var to_player : Vector2 = Vector2.ZERO
-	var dist_norm : float = 0.0
-	if near_player:
-		var diff = near_player.global_position - global_position
-		to_player = diff.normalized()
-		dist_norm = diff.length() / viewport_size.length()
+	# 1. Leer los sensores del entorno antes de procesar
+	_update_environment_sensors()
 	
-	var to_bullet : Vector2 = Vector2.ZERO
-	var dist_bullet_norm : float = 1.0 # Añadimos distancia a la bala para ayudar a esquivar
-	if near_bullet:
-		var diff_b = near_bullet.global_position - global_position
-		to_bullet = diff_b.normalized()
-		dist_bullet_norm = diff_b.length() / viewport_size.length()
-		
-	return [
-		damage / max_damage,
-		health / initial_health,          
-		global_position.x / viewport_size.x, 
-		global_position.y / viewport_size.y, 
-		velocity.x / max_speed,           
-		velocity.y / max_speed,           
-		to_player.x, # dirección al jugador
-		to_player.y,                      
-		dist_norm, #  distancia al jugador
-		to_bullet.x, # dirección de la bala
-		to_bullet.y,                     
-		dist_bullet_norm
-	]
+	# 2. Consumir las salidas que la red neuronal depositó en GlobalVars
+	_read_nn_inputs()
+	
+	# 3. Actualizar la lógica de movimiento delegada
+	floating_movement.update(delta)
+	move_and_slide()
+	
+	# 4. Actualizar la lógica de ataque delegada
+	ball_attack.update(delta)
+	update_action()
 
 func init_values() -> void:
-	viewport_size = get_viewport().get_visible_rect().size
 	health = initial_health
 	damage = base_damage
-
-func update_boss() -> void:
-	dead_if_can()
-	# Actualiza la direccion de movimiento (entre -1 y 1) 
-	# Obtiene la direccion del output de la red que es una lista [x,y] en un diccionario global
-	if not GlobalVars.nn_outputs.is_empty():
-		move_dir = Vector2(GlobalVars.nn_outputs['move_dir'][0], GlobalVars.nn_outputs['move_dir'][1]).normalized()
-		var angle : float = GlobalVars.nn_outputs['shot_angle']
-		shot_dir = Vector2(cos(angle), sin(angle))
-		current_action = GlobalVars.nn_outputs['current_action']
+	GlobalVars.boss_health = health
 	
+	# Inicialización de componentes hijos
+	if floating_movement:
+		floating_movement.setup(self)
+	if ball_attack:
+		ball_attack.setup(self)
+
+func _update_environment_sensors() -> void:
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
 	
-	# Actualiza la variable global
+	# Sincronizar el estado de vida actual para el calculador de rewards
 	GlobalVars.boss_health = health
+
+func _read_nn_inputs() -> void:
+	# Evitamos colgar el script si los outputs globales todavía no se inicializaron
+	if GlobalVars.nn_outputs.is_empty():
+		return
+		
+	# Mapeamos "move_dir" desde el Array [x, y] de la red a un Vector2
+	var nn_move = GlobalVars.nn_outputs.get("move_dir", [0.0, 0.0])
+	move_dir = Vector2(nn_move[0], nn_move[1])
+	
+	# Mapeamos el ángulo de disparo continuo
+	shot_angle = GlobalVars.nn_outputs.get("shot_angle", 0.0)
+	
+	# Mapeamos la acción discreta (0: nada, 1: disparar)
+	current_action = GlobalVars.nn_outputs.get("current_action", 0)
 
 func dead_if_can() -> void:
 	if health <= 0:
 		queue_free()
 
 func _get_near_player() -> PlayerController:
-	if GlobalVars.players.is_empty(): return null
+	if GlobalVars.players.is_empty(): 
+		return null
 	var near: PlayerController = null
 	var min_dist = INF
 	
 	for player in GlobalVars.players:
-		var dist = global_position.distance_to(player.global_position)
-		if dist < min_dist:
-			min_dist = dist
-			near = player
+		if is_instance_valid(player):
+			var dist = global_position.distance_to(player.global_position)
+			if dist < min_dist:
+				min_dist = dist
+				near = player
 	return near
 
 func _get_near_bullet() -> Bullet:
 	var bullets: Array = get_tree().get_nodes_in_group("Bullets")
-	if bullets.is_empty(): return null
+	if bullets.is_empty(): 
+		return null
 	var near: Bullet = null
 	var min_dist = INF
 	
 	for bullet in bullets:
-		if bullet.from_group == "Boss": continue
+		if not is_instance_valid(bullet) or bullet.from_group == "Boss": 
+			continue
 		var dist = global_position.distance_to(bullet.global_position)
 		if dist < min_dist:
 			min_dist = dist
@@ -141,19 +136,23 @@ func _get_near_bullet() -> Bullet:
 	return near
 
 func can_shot() -> bool:
-	return current_action == 1 # Dispara solo en su estado de ataque de disparo
+	return current_action == 1
 
-# ----------------
-# --- Acciones ---
-# ----------------
+# ----------------------------
+# --- Lógica de Acciones -----
+# ----------------------------
+
 func update_action() -> void:
-	boss_actions[current_action].call()
+	if boss_actions.has(current_action):
+		boss_actions[current_action].call()
 
 func _nothing_action() -> void:
-	if near_player:
-		Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
-		damage = min(max_damage, damage + damage_increment) # incrementa el daño
+	# El comportamiento pasivo puede incluir mirar al jugador más cercano si existe
+	if is_instance_valid(near_player):
+		# Podés usar tu script de Utils para manejar rotación pasiva si fuera necesario
+		pass
 
 func _ball_attack_action() -> void:
-	var shot_point = global_position + shot_dir * 100.0
-	Utils.view_to(global_position, shot_point, rotation_speed, self)
+	# El ataque se procesa en combinación con el script BallAttack.
+	# Podés añadir lógica estética o de fases adicionales acá.
+	pass

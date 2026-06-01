@@ -2,8 +2,8 @@ extends Node2D
 
 var viewport_size: Vector2
 
-@export var force_attack_mode: bool = true # No deja que la ia decida el ataque
-@export var force_attack: int = 1 # Ataque a forzar
+@export var force_attack_mode: bool = true # Permitir que la IA decida si dispara o no
+@export var force_attack: int = 1 
 @export var players             : Array[PackedScene]
 @export var spawn_player_points : Array[Node2D]
 @export var boss_spawn          : Node2D
@@ -12,263 +12,239 @@ var viewport_size: Vector2
 # ─────────────────────────────────────────
 #  Sistema de recompensas
 # ─────────────────────────────────────────
-const REWARD_DAMAGE_DEALT    : float =  5.0   # Por cada punto de daño hecho al jugador
-const REWARD_SURVIVE_STEP    : float =  0.0   # Por sobrevivir un step
-const REWARD_WIN_EPISODE     : float =  150.0  # El boss mata al jugador
-const REWARD_LOSE_EPISODE    : float = -50.0   # El boss muere
-const REWARD_FOR_SURVIVE     : float = 0.0001    # Por sobrevivir 
+const REWARD_DAMAGE_DEALT    : float =  5.0    # Por dañar al jugador
+const REWARD_SURVIVE_STEP    : float =  0.01   # Por sobrevivir un paso
+const REWARD_WIN_EPISODE     : float = 100.0   # Por ganar la partida
+const REWARD_LOSE_EPISODE    : float = -150.0  # Por perden la partida
 const REWARD_DODGE_BULLET    : float = 0.009   # Por esquivar balas
-const REWARD_DAMAGE_RECIBE   : float = 0.1    # Por recibir daño
-const REWARD_POINT_PLAYER    : float = 0.03   # Por apuntar hacia el jugador
-const REWARD_STATIC_VELOCITY : float = 0.02 # Por quedarse quieto
+const REWARD_DAMAGE_RECIBE   : float = -5.0    # Por recibir daño
+const REWARD_STATIC_VELOCITY : float = -0.02   # Por quedarse quieto
+
 # ─────────────────────────────────────────
-#  Nodos de la NN (se instancian en _ready)
+#  Nodos de la NN
 # ─────────────────────────────────────────
 var nn          : NeuralNetwork
 var trainer     : NNTrainer
 var persistence : NNPersistence
 
-# Referencias a entidades vivas
-var boss_instance   : BossController   = null
-var player_instances: Array            = []
+var boss_instance: BossController = null
+var current_step: int = 0 # Paso actual
+const MAX_STEPS_PER_EPISODE: int = 3000 # Maximos pasos posibles
 
-# Estado del episodio
-var episode_running    : bool  = false
-var prev_player_health : float = 0.0
-var prev_boss_health : float = 0.0
-var prev_boss_dist     : float = 0.0
-
-var best_reward : float = -INF
-
-# Contador de frames para debug
-var _debug_frame_count : int = 0
-
-const MAX_EPISODE_STEPS : int = 1800  # 30 segundos a 60fps
-var current_step : int = 0
+# Control de estado de salud para recompensas delta
+var last_boss_health: float = 0.0
+var last_player_health: float = 0.0
 
 func _ready() -> void:
-	viewport_size = get_viewport().get_visible_rect().size
-	_setup_nn()
-	start_simulation()
-
-# ─────────────────────────────────────────
-#  Inicializa y carga la red neuronal
-# ─────────────────────────────────────────
-func _setup_nn() -> void:
-	nn          = NeuralNetwork.new()
-	trainer     = NNTrainer.new()
-	persistence = NNPersistence.new()
+	viewport_size = get_viewport_rect().size
 	
+	# Instanciar componentes del sistema de IA
+	nn = NeuralNetwork.new()
 	add_child(nn)
+	
+	trainer = NNTrainer.new()
 	add_child(trainer)
+	trainer.setup(nn)
+	
+	persistence = NNPersistence.new()
 	add_child(persistence)
 	
-	persistence.load_into(nn, trainer)  # Carga pesos previos si existen
-	trainer.setup(nn)
+	# Intentar cargar cerebro previo
+	if not persistence.load_into(nn, trainer):
+		print("SimulationManager: Inicializando nuevo cerebro aleatorio.")
+		
+	_reset_simulation()
 
-# ─────────────────────────────────────────
-#  Spawn de entidades
-# ─────────────────────────────────────────
-func start_simulation() -> void:
-	current_step = 0
-	_debug_frame_count = 0
-	clean_entities()
-	
-	# Spawnea jugadores
-	for idx in range(players.size()):
-		var player_instance = players[idx].instantiate()
-		player_instance.global_position = Vector2(randf_range(0.0,viewport_size.x), randf_range(0.0, viewport_size.y))
-		#player_instance.global_position = spawn_player_points[idx].global_position
-		add_child(player_instance)
-		player_instances.append(player_instance)
-	
-	# Spawnea boss
-	boss_instance = boss.instantiate()
-	boss_instance.global_position = Vector2(randf_range(0.0,viewport_size.x), randf_range(0.0, viewport_size.y))
-	add_child(boss_instance)
-	
-	# Estado inicial del episodio
-	prev_player_health = _get_total_player_health()
-	prev_boss_dist     = _get_dist_boss_to_nearest_player()
-	prev_boss_health = boss_instance.health
-	episode_running    = true
-
-func clean_entities() -> void:
-	# Limpia instancias anteriores
-	for p in player_instances:
-		if is_instance_valid(p):
-			p.queue_free()
-	player_instances.clear()
-	GlobalVars.players.clear()
-	
-	if is_instance_valid(boss_instance):
-		boss_instance.queue_free()
-	boss_instance = null
-
-# ─────────────────────────────────────────
-#  Loop principal: corre cada physics frame
-# ─────────────────────────────────────────
 func _physics_process(_delta: float) -> void:
-	if not episode_running:
+	if not is_instance_valid(boss_instance) or not _any_player_alive():
+		_handle_episode_end()
 		return
 		
 	current_step += 1
-	if current_step >= MAX_EPISODE_STEPS:
-		_end_episode(false) # Si se acaba el tiempo el boss pierde
+	if current_step >= MAX_STEPS_PER_EPISODE:
+		_handle_episode_end()
 		return
+		
+	# 1. Obtener estado del entorno (Inputs)
+	var inputs: Array = _get_neural_network_inputs()
 	
-	_check_episode_end()
+	# 2. Forward pass de la red (Obtenemos las medias de la política)
+	var raw_output: Array = nn.forward(inputs)
+	if raw_output.is_empty(): return
 	
-	if not episode_running:
-		return
+	# 3. Aplicar exploración estocástica (Ruido Gaussiano/Uniforme basado en current_sigma)
+	var sigma: float = trainer.current_sigma
+	var action: Array = []
 	
-	if not is_instance_valid(boss_instance):
-		return
+	# Outputs continuos (0, 1, 2) -> Añadir ruido de exploración
+	for i in range(3):
+		var noise: float = randf_range(-sigma, sigma)
+		action.append(clampf(raw_output[i] + noise, -1.0, 1.0))
+		
+	# Output discreto (3) -> Probabilidad de disparo (Bernoulli)
+	# Guardamos la acción discreta final tomada (0 o 1)
+	var shoot_prob: float = raw_output[3]
+	var shoot_action: float = 1.0 if randf() < shoot_prob else 0.0
+	action.append(shoot_action)
 	
-	# Construye el vector de inputs normalizado
-	var input_vec : Array = _build_input_vec()
+	# 4. Aplicar acciones físicas al Boss
+	_apply_action_to_boss(action)
 	
-	# Calcula recompensa del step actual
-	var reward : float = _compute_step_reward()
+	# 5. Calcular recompensa obtenida en este step
+	var reward: float = _calculate_reward()
 	
-	# Hace forward + guarda experiencia
-	var output : Array = trainer.step(input_vec, reward)
+	# 6. Registrar el paso en el buffer del entrenador
+	trainer.record_step(inputs, raw_output, action, reward)
 	
-	# Actualiza GlobalVars con el output de la red
-	_apply_nn_output(output)
-	
-	# Debug: imprime inputs y outputs los primeros 3 frames de cada episodio
-	_debug_frame_count += 1
-	if _debug_frame_count <= 3:
-		pass
-		#print("=== FRAME ", _debug_frame_count, " ===")
-		#print("INPUT VEC (", input_vec.size(), " valores): ", input_vec)
-		#print("OUTPUT raw: ", output)
-		#print("  move_dir  → ", GlobalVars.nn_outputs['move_dir'])
-		#print("  shot_dir  → ", GlobalVars.nn_outputs['shot_dir'])
-		#print("  action    → ", GlobalVars.nn_outputs['current_action'])
-		#print("  reward    → ", reward)
-	
-	# Actualiza estado previo para el próximo step
-	prev_player_health = _get_total_player_health()
-	prev_boss_dist     = _get_dist_boss_to_nearest_player()
-	prev_boss_health = boss_instance.health if is_instance_valid(boss_instance) else 0.0
-# ─────────────────────────────────────────
-#  Chequea si el episodio terminó
-# ─────────────────────────────────────────
-func _check_episode_end() -> void:
-	var boss_alive    : bool = is_instance_valid(boss_instance) and boss_instance.health > 0
-	var players_alive : bool = _any_player_alive()
-	
-	if not boss_alive:
-		_end_episode(false)  # Boss murió → perdió
-	elif not players_alive:
-		_end_episode(true)   # Jugadores muertos → ganó
+	# Actualizar estados de salud locales para el próximo step
+	last_boss_health = boss_instance.health if is_instance_valid(boss_instance) else 0.0
+	last_player_health = _get_total_player_health()
 
-# ─────────────────────────────────────────
-#  Finaliza el episodio, entrena y respawnea
-# ─────────────────────────────────────────
-func _end_episode(boss_won: bool) -> void:
-	episode_running = false
-	
-	var final_reward : float = REWARD_WIN_EPISODE if boss_won else REWARD_LOSE_EPISODE
-	trainer.end_episode(final_reward)
-	
-	print("Episodio ", trainer.episode_count, 
-		  " | Boss ganó: ", boss_won, 
-		  " | Recompensa total: ", trainer.total_reward_last_episode)
-	
-	if trainer.total_reward_last_episode > best_reward:
-		best_reward = trainer.total_reward_last_episode
-		persistence.save(nn, trainer)
-	
-	# Pequeña pausa antes del respawn
-	await get_tree().create_timer(1.5).timeout
-	start_simulation()
-
-# ─────────────────────────────────────────
-#  Construcción del vector de inputs (normalizado)
-# ─────────────────────────────────────────
-func _build_input_vec() -> Array:
-	if not is_instance_valid(boss_instance):
-		return _zero_input_vec()
-	
-	var input_vec : Array = boss_instance.stats_normalized()
-	
-	# Stats del jugador más cercano
-	var np : PlayerController = boss_instance.near_player  # puede ser null
-	if is_instance_valid(np):
-		input_vec.append_array(np.stats_normalized())
+func _handle_episode_end() -> void:
+	# Determinar recompensa final del episodio
+	var final_reward: float = 0.0
+	if is_instance_valid(boss_instance) and boss_instance.health > 0:
+		if not _any_player_alive():
+			final_reward = REWARD_WIN_EPISODE
 	else:
-		input_vec.append_array([0.0, 0.0, 0.0])
+		final_reward = REWARD_LOSE_EPISODE
+		
+	if not trainer.episode_rewards.is_empty():
+		trainer.episode_rewards[trainer.episode_rewards.size() - 1] += final_reward
+		
+	# Ejecutar optimización por REINFORCE
+	print("Finalizando Episodio ", trainer.episode_count, " - Pasos: ", current_step, " - Sigma: ", trainer.current_sigma)
+	trainer.end_episode()
 	
-	return input_vec 
-
-func _zero_input_vec() -> Array:
-	var v : Array = []
-	for _i in range(nn.LAYER_SIZES[0]):
-		v.append(0.0)
-	return v
+	# Guardar progreso periódicamente
+	if trainer.episode_count % 10 == 0:
+		persistence.save(nn, trainer)
+		
+	_reset_simulation()
 
 # ─────────────────────────────────────────
-#  Cálculo de recompensa por step
+#  Mapeo de Variables de Entrada (15 Inputs)
 # ─────────────────────────────────────────
-func _compute_step_reward() -> float:
-	var reward : float = REWARD_SURVIVE_STEP
-	
+func _get_neural_network_inputs() -> Array:
+	var inputs: Array = []
 	if not is_instance_valid(boss_instance):
-		return 0.0
+		for i in range(15): inputs.append(0.0)
+		return inputs
 	
-	# Recompensa por dañar al jugador
-	var current_player_health : float = _get_total_player_health()
-	var damage_dealt : float = prev_player_health - current_player_health
-	if damage_dealt > 0.0:
-		reward += damage_dealt * REWARD_DAMAGE_DEALT 
+	# Posición relativa y estado del Boss
+	inputs.append(boss_instance.global_position.x / viewport_size.x)
+	inputs.append(boss_instance.global_position.y / viewport_size.y)
+	inputs.append(boss_instance.velocity.x / boss_instance.max_speed)
+	inputs.append(boss_instance.velocity.y / boss_instance.max_speed)
+	inputs.append(boss_instance.health / boss_instance.initial_health)
 	
-	# Reward de Esquive: Si hay una bala cerca y se está moviendo para esquivarla
-	if is_instance_valid(boss_instance.near_bullet):
-		var speed = boss_instance.velocity.length()
-		if speed < 15.0:
-			reward -= REWARD_STATIC_VELOCITY # Penalización por quedarse quieto frente a un peligro
-		else:
-			# Si se mueve en una dirección que se aleja del vector de la bala, sumamos premio de esquive
-			var bullet_vel = boss_instance.near_bullet.velocity.normalized() if "velocity" in boss_instance.near_bullet else Vector2.ZERO
-			var boss_vel_dir = boss_instance.velocity.normalized()
-			if boss_vel_dir.dot(bullet_vel) < 0.0: 
-				reward += REWARD_DODGE_BULLET
-	
-	# Penalización por recibir daño (crucial para que aprenda a reaccionar)
-	var damage_received : float = prev_boss_health - boss_instance.health
-	if damage_received > 0.0:
-		reward -= damage_received * REWARD_DAMAGE_RECIBE
-	
-	# Recompensa por buena puntería al disparar
-	var boss_bullets = get_tree().get_nodes_in_group("Bullets")
-	if is_instance_valid(boss_instance.near_player):
-		for b in boss_bullets:
-			if b.from_group == "Boss" and "dir_to_mirror" in b:
-				var to_player_from_bullet = (boss_instance.near_player.global_position - b.global_position).normalized()
-				var bullet_alignment = to_player_from_bullet.dot(b.dir_to_mirror.normalized())
-				if bullet_alignment > 0.8:
-					reward += REWARD_POINT_PLAYER
-	
-	return reward
+	# Relación con el Jugador más cercano
+	var near_player = boss_instance.near_player
+	if is_instance_valid(near_player):
+		var dir_to_p = (near_player.global_position - boss_instance.global_position)
+		inputs.append(dir_to_p.x / viewport_size.x)
+		inputs.append(dir_to_p.y / viewport_size.y)
+		inputs.append(near_player.velocity.x / near_player.max_speed)
+		inputs.append(near_player.velocity.y / near_player.max_speed)
+		inputs.append(near_player.health / near_player.initial_health)
+	else:
+		for i in range(5): inputs.append(0.0)
+		
+	# Relación con la Bala enemiga más cercana (Peligro)
+	var near_bullet = boss_instance.near_bullet
+	if is_instance_valid(near_bullet):
+		var dir_to_b = (near_bullet.global_position - boss_instance.global_position)
+		inputs.append(dir_to_b.x / viewport_size.x)
+		inputs.append(dir_to_b.y / viewport_size.y)
+		inputs.append(near_bullet.global_position.x)
+		inputs.append(near_bullet.global_position.y)
+		inputs.append(near_bullet.speed / 1000.0)
+	else:
+		for i in range(5): inputs.append(0.0)
+		
+	return inputs
 
 # ─────────────────────────────────────────
-#  Aplica el output de la red a GlobalVars
-#  para que boss_controller lo lea en update_boss()
+#  Aplicación de salidas de la red al entorno
 # ─────────────────────────────────────────
-func _apply_nn_output(output: Array) -> void:
-	var shot_angle : float = output[2] * PI
+func _apply_action_to_boss(action: Array) -> void:
+	if not is_instance_valid(boss_instance): return
+	
+	var shot_angle : float = action[2] * PI
 	GlobalVars.nn_outputs = {
-		"move_dir"      : [output[0], output[1]],
-		"shot_angle"      : shot_angle,
-		"current_action": force_attack if force_attack_mode else (1 if output[3] >= 0.5 else 0),
+		"move_dir"      : [action[0], action[1]],
+		"shot_angle"    : shot_angle,
+		"current_action": force_attack if force_attack_mode else int(action[3]),
 	}
 
 # ─────────────────────────────────────────
-#  Helpers
+#  Cálculo de Recompensas por Step
 # ─────────────────────────────────────────
+func _calculate_reward() -> float:
+	var reward: float = REWARD_SURVIVE_STEP
+	if not is_instance_valid(boss_instance): return reward
+	
+	# 1. Recompensa por daño infligido al jugador
+	var current_player_health = _get_total_player_health()
+	var damage_dealt = last_player_health - current_player_health
+	if damage_dealt > 0:
+		reward += damage_dealt * REWARD_DAMAGE_DEALT
+		
+	# 2. Castigo por recibir daño el Boss
+	var damage_taken = last_boss_health - boss_instance.health
+	if damage_taken > 0:
+		reward += damage_taken * REWARD_DAMAGE_RECIBE
+		
+	# 3. Penalización por velocidad nula (evitar parálisis)
+	if boss_instance.velocity.length() < 5.0:
+		reward += REWARD_STATIC_VELOCITY
+		
+	# 4. Incentivo por esquivar balas cercanas
+	if is_instance_valid(boss_instance.near_bullet):
+		var dist = boss_instance.global_position.distance_to(boss_instance.near_bullet.global_position)
+		if dist > 150.0 and dist < 300.0:
+			reward += REWARD_DODGE_BULLET
+			
+	return reward
+
+# ─────────────────────────────────────────
+#  Reinicio total de la escena de simulación
+# ─────────────────────────────────────────
+func _reset_simulation() -> void:
+	current_step = 0
+	
+	# 1. Limpiar proyectiles existentes
+	var bullets = get_tree().get_nodes_in_group("Bullets")
+	for b in bullets:
+		if is_instance_valid(b): b.queue_free()
+		
+	# 2. Eliminar jugadores viejos y respawnear nuevos
+	for p in GlobalVars.players:
+		if is_instance_valid(p): p.queue_free()
+	GlobalVars.players.clear()
+	
+	for i in range(players.size()):
+		var p_inst = players[i].instantiate()
+		p_inst.global_position = spawn_player_points[i].global_position
+		get_parent().add_child.call_deferred(p_inst)
+		GlobalVars.players.append(p_inst)
+		
+	# 3. Reiniciar por completo al Boss
+	if is_instance_valid(boss_instance):
+		boss_instance.queue_free()
+		
+	boss_instance = boss.instantiate() as BossController
+	boss_instance.global_position = boss_spawn.global_position
+	# Forzamos la restauración de los puntos de vida iniciales
+	boss_instance.health = boss_instance.initial_health 
+	get_parent().add_child.call_deferred(boss_instance)
+	
+	GlobalVars.boss_health = boss_instance.initial_health
+	
+	# Inicializar deltas de salud
+	last_boss_health = boss_instance.initial_health
+	last_player_health = _get_total_player_health()
+
 func _get_total_player_health() -> float:
 	var total : float = 0.0
 	for p in GlobalVars.players:
@@ -281,10 +257,3 @@ func _any_player_alive() -> bool:
 		if is_instance_valid(p) and p.health > 0:
 			return true
 	return false
-
-func _get_dist_boss_to_nearest_player() -> float:
-	if not is_instance_valid(boss_instance):
-		return 0.0
-	if not is_instance_valid(boss_instance.near_player):
-		return INF
-	return boss_instance.global_position.distance_to(boss_instance.near_player.global_position)

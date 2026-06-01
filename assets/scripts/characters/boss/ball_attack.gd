@@ -38,4 +38,4 @@ func _set_bullet_values(bullet_instence: Bullet) -> void:
 	bullet_instence.group_target = "Players"
 	bullet_instence.from_group = "Boss"
 	bullet_instence.bullet_color = Color.BLUE
-	bullet_instence.custom_dir = boss.shot_dir 
+	bullet_instence.custom_dir = Vector2(cos(boss.shot_angle), sin(boss.shot_angle)) 
