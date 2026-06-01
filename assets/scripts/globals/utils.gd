@@ -22,3 +22,9 @@ func _select_target_angle(direction, base_mirror:int) -> float:
 	if base_mirror not in dir_dict.keys():
 		push_error("el parametro 'dir' debe estar entre 0 y 3.")
 	return dir_dict[base_mirror]
+
+static func calculate_proximity_reward(distance: float, max_range: float) -> float:
+	if distance > max_range:
+		return 0.0
+	# Retorna un valor entre 0.001 y 0.005 dependiendo de qué tan cerca esté
+	return 0.005 * (1.0 - (distance / max_range))

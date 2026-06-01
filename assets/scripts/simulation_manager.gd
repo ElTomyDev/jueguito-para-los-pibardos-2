@@ -19,7 +19,9 @@ const REWARD_LOSE_EPISODE    : float = -150.0  # Por perden la partida
 const REWARD_DODGE_BULLET    : float = 0.009   # Por esquivar balas
 const REWARD_DAMAGE_RECIBE   : float = -5.0    # Por recibir daño
 const REWARD_STATIC_VELOCITY : float = -0.02   # Por quedarse quieto
+const REWARD_NEAR_BULLET     : float = 0.005   # Por disparar cerca del jugador
 
+const PROXIMITY_MAX_RANGE    : float = 60.0    # Rango de recompensa para proximidad de bala
 # ─────────────────────────────────────────
 #  Nodos de la NN
 # ─────────────────────────────────────────
@@ -34,6 +36,8 @@ const MAX_STEPS_PER_EPISODE: int = 3000 # Maximos pasos posibles
 # Control de estado de salud para recompensas delta
 var last_boss_health: float = 0.0
 var last_player_health: float = 0.0
+
+var total_reward_step: float = 0.0
 
 func _ready() -> void:
 	viewport_size = get_viewport_rect().size
@@ -56,49 +60,25 @@ func _ready() -> void:
 	_reset_simulation()
 
 func _physics_process(_delta: float) -> void:
-	if not is_instance_valid(boss_instance) or not _any_player_alive():
-		_handle_episode_end()
-		return
-		
+	if not is_instance_valid(boss_instance): return
+	
+	var state = _get_neural_network_inputs() # (t)
+	var output = nn.forward(state)
+	var action = _apply_actions(output)
+	
+	# Mover el boss y dejar que Godot procese colisiones/física
+	boss_instance.move_and_slide()
+	
+	var reward = _calculate_reward() # Basado en el resultado de la acción
+	var next_state = _get_game_state() # (t+1) Captura el nuevo entorno
+	
+	print(boss_instance.health)
+	var done = (current_step >= MAX_STEPS_PER_EPISODE) or (boss_instance.health <= 0.0 or GlobalVars.players[0].health <= 0.0)
+	# Entrenamiento en línea
+	trainer.train_actor_critic(state, action, reward, next_state, done)
+	
 	current_step += 1
-	if current_step >= MAX_STEPS_PER_EPISODE:
-		_handle_episode_end()
-		return
-		
-	# 1. Obtener estado del entorno (Inputs)
-	var inputs: Array = _get_neural_network_inputs()
-	
-	# 2. Forward pass de la red (Obtenemos las medias de la política)
-	var raw_output: Array = nn.forward(inputs)
-	if raw_output.is_empty(): return
-	
-	# 3. Aplicar exploración estocástica (Ruido Gaussiano/Uniforme basado en current_sigma)
-	var sigma: float = trainer.current_sigma
-	var action: Array = []
-	
-	# Outputs continuos (0, 1, 2) -> Añadir ruido de exploración
-	for i in range(3):
-		var noise: float = randf_range(-sigma, sigma)
-		action.append(clampf(raw_output[i] + noise, -1.0, 1.0))
-		
-	# Output discreto (3) -> Probabilidad de disparo (Bernoulli)
-	# Guardamos la acción discreta final tomada (0 o 1)
-	var shoot_prob: float = raw_output[3]
-	var shoot_action: float = 1.0 if randf() < shoot_prob else 0.0
-	action.append(shoot_action)
-	
-	# 4. Aplicar acciones físicas al Boss
-	_apply_action_to_boss(action)
-	
-	# 5. Calcular recompensa obtenida en este step
-	var reward: float = _calculate_reward()
-	
-	# 6. Registrar el paso en el buffer del entrenador
-	trainer.record_step(inputs, raw_output, action, reward)
-	
-	# Actualizar estados de salud locales para el próximo step
-	last_boss_health = boss_instance.health if is_instance_valid(boss_instance) else 0.0
-	last_player_health = _get_total_player_health()
+	if done: _reset_simulation()
 
 func _handle_episode_end() -> void:
 	# Determinar recompensa final del episodio
@@ -113,13 +93,13 @@ func _handle_episode_end() -> void:
 		trainer.episode_rewards[trainer.episode_rewards.size() - 1] += final_reward
 		
 	# Ejecutar optimización por REINFORCE
-	print("Finalizando Episodio ", trainer.episode_count, " - Pasos: ", current_step, " - Sigma: ", trainer.current_sigma)
+	print("Finalizando Episodio ", trainer.episode_count, " - Pasos: ", current_step, " - Sigma: ", trainer.current_sigma, " - Total Reward: ", total_reward_step + final_reward)
 	trainer.end_episode()
-	
 	# Guardar progreso periódicamente
 	if trainer.episode_count % 10 == 0:
 		persistence.save(nn, trainer)
 		
+	total_reward_step = 0.0
 	_reset_simulation()
 
 # ─────────────────────────────────────────
@@ -131,51 +111,32 @@ func _get_neural_network_inputs() -> Array:
 		for i in range(15): inputs.append(0.0)
 		return inputs
 	
-	# Posición relativa y estado del Boss
-	inputs.append(boss_instance.global_position.x / viewport_size.x)
-	inputs.append(boss_instance.global_position.y / viewport_size.y)
-	inputs.append(boss_instance.velocity.x / boss_instance.max_speed)
-	inputs.append(boss_instance.velocity.y / boss_instance.max_speed)
-	inputs.append(boss_instance.health / boss_instance.initial_health)
+	# Boss: Pos (0 a 1) y Vel (normalizada por max_speed)
+	inputs.append_array([
+		boss_instance.global_position.x / viewport_size.x,
+		boss_instance.global_position.y / viewport_size.y,
+		clampf(boss_instance.velocity.x / boss_instance.max_speed, -1.0, 1.0),
+		clampf(boss_instance.velocity.y / boss_instance.max_speed, -1.0, 1.0),
+		boss_instance.health / boss_instance.initial_health
+	])
 	
-	# Relación con el Jugador más cercano
+	# Jugador: Relativo (normalizado por 1000px)
 	var near_player = boss_instance.near_player
 	if is_instance_valid(near_player):
-		var dir_to_p = (near_player.global_position - boss_instance.global_position)
-		inputs.append(dir_to_p.x / viewport_size.x)
-		inputs.append(dir_to_p.y / viewport_size.y)
-		inputs.append(near_player.velocity.x / near_player.max_speed)
-		inputs.append(near_player.velocity.y / near_player.max_speed)
-		inputs.append(near_player.health / near_player.initial_health)
+		var dir = (near_player.global_position - boss_instance.global_position) / 1000.0
+		inputs.append_array([clampf(dir.x, -1.0, 1.0), clampf(dir.y, -1.0, 1.0), 0.0, 0.0, 0.0]) # Ajustar según sensores
 	else:
-		for i in range(5): inputs.append(0.0)
+		inputs.append_array([0.0, 0.0, 0.0, 0.0, 0.0])
 		
-	# Relación con la Bala enemiga más cercana (Peligro)
+	# Bala: Relativo (normalizado por 500px)
 	var near_bullet = boss_instance.near_bullet
 	if is_instance_valid(near_bullet):
-		var dir_to_b = (near_bullet.global_position - boss_instance.global_position)
-		inputs.append(dir_to_b.x / viewport_size.x)
-		inputs.append(dir_to_b.y / viewport_size.y)
-		inputs.append(near_bullet.global_position.x)
-		inputs.append(near_bullet.global_position.y)
-		inputs.append(near_bullet.speed / 1000.0)
+		var dir = (near_bullet.global_position - boss_instance.global_position) / 500.0
+		inputs.append_array([clampf(dir.x, -1.0, 1.0), clampf(dir.y, -1.0, 1.0), 0.0, 0.0, 0.0])
 	else:
-		for i in range(5): inputs.append(0.0)
+		inputs.append_array([1.0, 1.0, 0.0, 0.0, 0.0])
 		
 	return inputs
-
-# ─────────────────────────────────────────
-#  Aplicación de salidas de la red al entorno
-# ─────────────────────────────────────────
-func _apply_action_to_boss(action: Array) -> void:
-	if not is_instance_valid(boss_instance): return
-	
-	var shot_angle : float = action[2] * PI
-	GlobalVars.nn_outputs = {
-		"move_dir"      : [action[0], action[1]],
-		"shot_angle"    : shot_angle,
-		"current_action": force_attack if force_attack_mode else int(action[3]),
-	}
 
 # ─────────────────────────────────────────
 #  Cálculo de Recompensas por Step
@@ -183,6 +144,7 @@ func _apply_action_to_boss(action: Array) -> void:
 func _calculate_reward() -> float:
 	var reward: float = REWARD_SURVIVE_STEP
 	if not is_instance_valid(boss_instance): return reward
+	
 	
 	# 1. Recompensa por daño infligido al jugador
 	var current_player_health = _get_total_player_health()
@@ -204,7 +166,19 @@ func _calculate_reward() -> float:
 		var dist = boss_instance.global_position.distance_to(boss_instance.near_bullet.global_position)
 		if dist > 150.0 and dist < 300.0:
 			reward += REWARD_DODGE_BULLET
-			
+	# 1. Calcular recompensa por proximidad de balas al jugador
+	var bullets = get_tree().get_nodes_in_group("Bullets")
+	var player = GlobalVars.players[0] if GlobalVars.players.size() > 0 else null
+	
+	if player and bullets.size() > 0:
+		for b in bullets:
+			# Solo evaluamos balas que no sean del Boss (o las que quieras premiar)
+			if is_instance_valid(b) and b.from_group != "Players": 
+				var dist = b.global_position.distance_to(player.global_position)
+				if dist <= PROXIMITY_MAX_RANGE:
+					reward += REWARD_NEAR_BULLET * (1.0 - (dist / PROXIMITY_MAX_RANGE))
+					
+	total_reward_step += reward
 	return reward
 
 # ─────────────────────────────────────────
@@ -257,3 +231,53 @@ func _any_player_alive() -> bool:
 		if is_instance_valid(p) and p.health > 0:
 			return true
 	return false
+
+func _get_game_state() -> Array:
+	var state = []
+	if not is_instance_valid(boss_instance): return []
+	
+	# 1-2. Posición relativa al jugador más cercano
+	var near_player = boss_instance._get_near_player()
+	var p_pos = near_player.global_position if near_player else Vector2.ZERO
+	var rel_pos = (p_pos - boss_instance.global_position) / 1000.0 # Normalizado
+	state.append_array([rel_pos.x, rel_pos.y])
+	
+	# 3-4. Distancia y dirección a la bala más cercana
+	var near_bullet = boss_instance.near_bullet
+	if near_bullet:
+		var b_rel = (near_bullet.global_position - boss_instance.global_position) / 500.0
+		state.append_array([b_rel.x, b_rel.y])
+	else:
+		state.append_array([1.0, 1.0]) # No hay peligro
+		
+	# 5. Vida del boss (0.0 a 1.0)
+	state.append(boss_instance.health / boss_instance.initial_health)
+	
+	# 6-7. Velocidad actual del boss
+	state.append_array([boss_instance.velocity.x / 300.0, boss_instance.velocity.y / 300.0])
+	
+	# 8-15. Rellenar con datos adicionales (limites, ángulo, cooldown, etc.)
+	# Es vital que siempre devuelva 15 floats exactos para tu capa de entrada.
+	while state.size() < 15:
+		state.append(0.0)
+		
+	return state
+
+func _apply_actions(output: Array) -> Array:
+	# output: [mov_x, mov_y, angulo, disparo, valor_critic]
+	# Usamos los primeros 4 para controlar al boss
+	if not is_instance_valid(boss_instance): return [0.0, 0.0, 0.0, 0.0]
+	
+	var shot_angle : float = output[2] * PI
+	GlobalVars.nn_outputs = {
+		"move_dir"      : [output[0], output[1]],
+		"shot_angle"    : shot_angle,
+		"current_action": force_attack if force_attack_mode else int(output[3]),
+	}
+	
+	# Retornamos la acción aplicada para que el trainer sepa qué se ejecutó
+	return [output[0], output[1], output[2], output[3]]
+
+func _get_game_next_state() -> Array:
+	# Se llama tras un frame de física para ver cómo cambió el entorno
+	return _get_game_state()

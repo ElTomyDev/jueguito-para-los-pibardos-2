@@ -8,7 +8,9 @@ class_name NeuralNetwork
 #                sigmoid en output 3  (acción discreta de disparo)
 # ─────────────────────────────────────────
 
-const LAYER_SIZES : Array[int] = [15, 24, 16, 4]
+const LAYER_SIZES : Array[int] = [15, 24, 16, 5]
+
+const LEARNING_RATE : float = 0.001
 
 # Pesos y biases por capa.
 # weights[i] es una matriz [LAYER_SIZES[i+1]][LAYER_SIZES[i]]
@@ -51,99 +53,66 @@ func _initialize_weights() -> void:
 #  Forward pass
 # ─────────────────────────────────────────
 func forward(input_vec: Array) -> Array:
-	if len(input_vec) != LAYER_SIZES[0]:
-		push_error("La cantidad de inputs debe ser igual a lo que pide la red. Red: ", LAYER_SIZES[0], " Inputs: ", len(input_vec))
-		return []
-		
-	activations.clear()
-	z_values.clear()
+	activations = [input_vec]
+	z_values = []
 	
-	var current_activation : Array = input_vec.duplicate()
-	activations.append(current_activation.duplicate())
-	
-	for layer_idx in range(weights.size()):
-		var layer_weights : Array = weights[layer_idx]
-		var layer_biases  : Array = biases[layer_idx]
-		var next_activation : Array = []
-		var layer_z         : Array = []
-		
-		# Multiplicación de matriz por vector + bias (Z = W * A + B)
-		for j in range(layer_weights.size()):
-			var neuron_weights : Array = layer_weights[j]
-			var z : float = layer_biases[j]
-			for k in range(current_activation.size()):
-				z += neuron_weights[k] * current_activation[k]
-			layer_z.append(z)
+	for i in range(weights.size()):
+		var next_activations = []
+		var next_z = []
+		for j in range(LAYER_SIZES[i+1]):
+			var z = biases[i][j]
+			for k in range(LAYER_SIZES[i]):
+				z += weights[i][j][k] * activations[i][k]
+			next_z.append(z)
 			
-			# --- APLICACIÓN DE LAS FUNCIONES DE ACTIVACIÓN ---
-			if layer_idx == weights.size() - 1:
-				# Capa de salida (Capa 3, tamaño 4)
-				if j < 3:
-					# Índices 0, 1, 2: move_x, move_y, shot_angle -> Tanh
-					next_activation.append(_tanh(z))
-				else:
-					# Índice 3: current_action -> Sigmoid
-					next_activation.append(_sigmoid(z))
+			# Activación:
+			if i == weights.size() - 1:
+				if j == 4: # Critic: Lineal
+					next_activations.append(z)
+				elif j == 3: # Disparo: Sigmoid
+					next_activations.append(1.0 / (1.0 + exp(-clampf(z, -20.0, 20.0))))
+				else: # Movimiento: Tanh
+					next_activations.append(tanh(z))
 			else:
-				# Capas ocultas -> ReLU
-				next_activation.append(_relu(z))
-				
-		z_values.append(layer_z)
-		current_activation = next_activation.duplicate()
-		activations.append(current_activation.duplicate())
-		
-	return current_activation
+				next_activations.append(max(0.0, z)) # ReLU
+		z_values.append(next_z)
+		activations.append(next_activations)
+	return activations.back()
 
 # ─────────────────────────────────────────
 #  Backpropagation para REINFORCE
 # ─────────────────────────────────────────
-func backpropagate(loss_gradient: Array, learning_rate: float) -> void:
-	var deltas : Array = []
-	for i in range(weights.size()):
-		deltas.append([])
-		
-	# 1. Calcular el delta para la capa de salida (Última capa)
-	var output_layer_idx : int = weights.size() - 1
-	var output_z         : Array = z_values[output_layer_idx]
-	var output_delta     : Array = []
-	
-	for j in range(loss_gradient.size()):
-		var d_activation : float = 0.0
-		if j < 3:
-			# Índices 0, 1, 2 usan la derivada de la Tanh
-			d_activation = _tanh_derivative(output_z[j])
-		else:
-			# Índice 3 usa la derivada de la Sigmoid
-			d_activation = _sigmoid_derivative(output_z[j])
-			
-		output_delta.append(loss_gradient[j] * d_activation)
-		
-	deltas[output_layer_idx] = output_delta
-	
-	# 2. Propagar el error hacia atrás (Capas ocultas)
-	for layer_idx in range(output_layer_idx - 1, -1, -1):
-		var layer_weights_next : Array = weights[layer_idx + 1]
-		var delta_next         : Array = deltas[layer_idx + 1]
-		var current_z          : Array = z_values[layer_idx]
-		var current_delta      : Array = []
-		
-		# Corregido: Iteramos según la cantidad de neuronas de la capa actual
-		for j in range(current_z.size()):
-			var error : float = 0.0
-			for k in range(delta_next.size()):
-				error += layer_weights_next[k][j] * delta_next[k]
-			current_delta.append(error * _relu_derivative(current_z[j]))
+func backprop_actor_critic(grad_actor: Array, advantage: float) -> void:
+	var num_layers = weights.size()
+	var deltas = []
+	deltas.resize(num_layers)
+
+	# 1. Delta Capa Salida
+	var last_delta = []
+	for i in range(4): last_delta.append(grad_actor[i]) # Actor
+	last_delta.append(-advantage) # Critic
+	deltas[num_layers - 1] = last_delta
+
+	# 2. Backprop Capas Ocultas
+	for layer_idx in range(num_layers - 2, -1, -1):
+		var current_delta = []
+		var next_weights = weights[layer_idx + 1]
+		var next_delta = deltas[layer_idx + 1]
+		for j in range(LAYER_SIZES[layer_idx + 1]):
+			var error = 0.0
+			for k in range(next_delta.size()):
+				error += next_weights[k][j] * next_delta[k]
+			current_delta.append(error * (1.0 if z_values[layer_idx][j] > 0.0 else 0.0))
 		deltas[layer_idx] = current_delta
-		
-	# 3. Actualización de pesos y biases utilizando Descenso de Gradiente
-	for layer_idx in range(weights.size()):
-		var delta      : Array = deltas[layer_idx]
-		var act_prev   : Array = activations[layer_idx]
-		
-		for j in range(delta.size()):
-			biases[layer_idx][j] -= learning_rate * delta[j]
-			for k in range(act_prev.size()):
-				weights[layer_idx][j][k] -= learning_rate * delta[j] * act_prev[k]
+
+	# 3. Actualización (LR diferenciada)
+	var critic_lr = LEARNING_RATE * 0.5
+	for i in range(num_layers):
+		for j in range(deltas[i].size()):
+			var lr = (critic_lr if (i == num_layers - 1 and j == 4) else LEARNING_RATE)
+			biases[i][j] -= lr * deltas[i][j]
+			for k in range(activations[i].size()):
+				weights[i][j][k] -= lr * deltas[i][j] * activations[i][k]
 
 # ─────────────────────────────────────────
 #  Funciones de activación y sus derivadas (PROTEGIDAS contra NaN)
