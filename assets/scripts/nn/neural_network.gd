@@ -84,6 +84,7 @@ func forward(input_vec: Array) -> Array:
 # ─────────────────────────────────────────
 func backprop_actor_critic(grad_actor: Array, advantage: float) -> void:
 	var num_layers = weights.size()
+	var last_layer_idx = weights.size() - 1
 	var deltas = []
 	deltas.resize(num_layers)
 
@@ -104,16 +105,20 @@ func backprop_actor_critic(grad_actor: Array, advantage: float) -> void:
 				error += next_weights[k][j] * next_delta[k]
 			current_delta.append(error * (1.0 if z_values[layer_idx][j] > 0.0 else 0.0))
 		deltas[layer_idx] = current_delta
-
-	# 3. Actualización (LR diferenciada)
-	var critic_lr = LEARNING_RATE * 0.5
+	
+		# Gradiente calculado: grad_actor contiene 4 del Actor y 1 del Critic
+	deltas[last_layer_idx] = grad_actor 
+	
+	# 3. Actualización
 	for i in range(num_layers):
 		for j in range(deltas[i].size()):
-			var lr = (critic_lr if (i == num_layers - 1 and j == 4) else LEARNING_RATE)
+			# El Critic (índice 4) es regresión lineal, no requiere derivada ReLU/Tanh
+			var is_critic = (i == num_layers - 1 and j == 4)
+			var lr = (LEARNING_RATE * 0.5) if is_critic else LEARNING_RATE
+			
 			biases[i][j] -= lr * deltas[i][j]
 			for k in range(activations[i].size()):
 				weights[i][j][k] -= lr * deltas[i][j] * activations[i][k]
-
 # ─────────────────────────────────────────
 #  Funciones de activación y sus derivadas (PROTEGIDAS contra NaN)
 # ─────────────────────────────────────────

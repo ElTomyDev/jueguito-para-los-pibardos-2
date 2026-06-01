@@ -31,8 +31,8 @@ var viewport_size: Vector2
 
 # Mapeo de acciones discretas decididas por la red neuronal
 var boss_actions: Dictionary = {
-	0: func(): _nothing_action(),
-	1: func(): _ball_attack_action()
+	0: func(_d): _nothing_action(_d),
+	1: func(d): _ball_attack_action(d)
 }
 
 var current_action: int = 0
@@ -54,19 +54,13 @@ func _process(delta: float) -> void:
 	dead_if_can()
 
 func _physics_process(delta: float) -> void:
-	# 1. Leer los sensores del entorno antes de procesar
 	_update_environment_sensors()
 	
-	# 2. Consumir las salidas que la red neuronal depositó en GlobalVars
 	_read_nn_inputs()
-	
-	# 3. Actualizar la lógica de movimiento delegada
+
 	floating_movement.update(delta)
+	update_action(delta)
 	move_and_slide()
-	
-	# 4. Actualizar la lógica de ataque delegada
-	ball_attack.update(delta)
-	update_action()
 
 func init_values() -> void:
 	health = initial_health
@@ -91,15 +85,9 @@ func _read_nn_inputs() -> void:
 	if GlobalVars.nn_outputs.is_empty():
 		return
 		
-	# Mapeamos "move_dir" desde el Array [x, y] de la red a un Vector2
-	var nn_move = GlobalVars.nn_outputs.get("move_dir", [0.0, 0.0])
-	move_dir = Vector2(nn_move[0], nn_move[1])
-	
-	# Mapeamos el ángulo de disparo continuo
-	shot_angle = GlobalVars.nn_outputs.get("shot_angle", 0.0)
-	
-	# Mapeamos la acción discreta (0: nada, 1: disparar)
-	current_action = GlobalVars.nn_outputs.get("current_action", 0)
+	self.move_dir = GlobalVars.nn_outputs.get("move_dir", Vector2.ZERO)
+	self.current_action = GlobalVars.nn_outputs.get("current_action", 0)
+	self.shot_angle = GlobalVars.nn_outputs.get("shot_angle", 0.0)
 
 func dead_if_can() -> void:
 	if health <= 0:
@@ -142,17 +130,15 @@ func can_shot() -> bool:
 # --- Lógica de Acciones -----
 # ----------------------------
 
-func update_action() -> void:
+func update_action(delta) -> void:
 	if boss_actions.has(current_action):
-		boss_actions[current_action].call()
+		boss_actions[current_action].call(delta)
 
-func _nothing_action() -> void:
+func _nothing_action(delta: float) -> void:
 	# El comportamiento pasivo puede incluir mirar al jugador más cercano si existe
 	if is_instance_valid(near_player):
-		# Podés usar tu script de Utils para manejar rotación pasiva si fuera necesario
-		pass
+		Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
 
-func _ball_attack_action() -> void:
-	# El ataque se procesa en combinación con el script BallAttack.
-	# Podés añadir lógica estética o de fases adicionales acá.
-	pass
+
+func _ball_attack_action(delta: float) -> void:
+	ball_attack.update(delta)

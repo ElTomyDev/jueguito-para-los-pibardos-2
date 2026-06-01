@@ -62,20 +62,22 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	if not is_instance_valid(boss_instance): return
 	
-	var state = _get_neural_network_inputs() # (t)
+	var state = _get_neural_network_inputs()
 	var output = nn.forward(state)
-	var action = _apply_actions(output)
+	_apply_actions(output)
 	
-	# Mover el boss y dejar que Godot procese colisiones/física
 	boss_instance.move_and_slide()
 	
-	var reward = _calculate_reward() # Basado en el resultado de la acción
-	var next_state = _get_game_state() # (t+1) Captura el nuevo entorno
+	# 4. Calcular recompensa basada en el cambio de estado
+	var next_state = _get_neural_network_inputs() 
+	var reward = _calculate_reward()
+	var done = false
+	if (current_step >= MAX_STEPS_PER_EPISODE) or (boss_instance.health <= 0.0 or GlobalVars.players[0].health <= 0.0):
+		print("DEBUG: Epísodio terminado. Salud jefe: ", boss_instance.health)
+		done = true
 	
-	print(boss_instance.health)
-	var done = (current_step >= MAX_STEPS_PER_EPISODE) or (boss_instance.health <= 0.0 or GlobalVars.players[0].health <= 0.0)
-	# Entrenamiento en línea
-	trainer.train_actor_critic(state, action, reward, next_state, done)
+	# 6. Entrenamiento en línea
+	trainer.train_actor_critic(state, output.slice(0,4), reward, next_state, done)
 	
 	current_step += 1
 	if done: _reset_simulation()
@@ -239,13 +241,13 @@ func _get_game_state() -> Array:
 	# 1-2. Posición relativa al jugador más cercano
 	var near_player = boss_instance._get_near_player()
 	var p_pos = near_player.global_position if near_player else Vector2.ZERO
-	var rel_pos = (p_pos - boss_instance.global_position) / 1000.0 # Normalizado
+	var rel_pos = ((p_pos - boss_instance.global_position) / 1000.0).clamp(Vector2(-1, -1), Vector2(1, 1))
 	state.append_array([rel_pos.x, rel_pos.y])
 	
 	# 3-4. Distancia y dirección a la bala más cercana
 	var near_bullet = boss_instance.near_bullet
 	if near_bullet:
-		var b_rel = (near_bullet.global_position - boss_instance.global_position) / 500.0
+		var b_rel = ((near_bullet.global_position - boss_instance.global_position) / 500.0).clamp(Vector2(-1, -1), Vector2(1, 1))
 		state.append_array([b_rel.x, b_rel.y])
 	else:
 		state.append_array([1.0, 1.0]) # No hay peligro
@@ -269,11 +271,16 @@ func _apply_actions(output: Array) -> Array:
 	if not is_instance_valid(boss_instance): return [0.0, 0.0, 0.0, 0.0]
 	
 	var shot_angle : float = output[2] * PI
-	GlobalVars.nn_outputs = {
-		"move_dir"      : [output[0], output[1]],
-		"shot_angle"    : shot_angle,
-		"current_action": force_attack if force_attack_mode else int(output[3]),
-	}
+	if GlobalVars.nn_outputs.is_empty():
+		GlobalVars.nn_outputs = {
+			"move_dir"      : [output[0], output[1]],
+			"shot_angle"    : shot_angle,
+			"current_action": force_attack if force_attack_mode else int(output[3]),
+		}
+	else:
+		GlobalVars.nn_outputs["move_dir"] = Vector2(output[0], output[1])
+		GlobalVars.nn_outputs["shot_angle"] = shot_angle
+		GlobalVars.nn_outputs["current_action"] = 1 if output[3] > 0.5 else 0
 	
 	# Retornamos la acción aplicada para que el trainer sepa qué se ejecutó
 	return [output[0], output[1], output[2], output[3]]
