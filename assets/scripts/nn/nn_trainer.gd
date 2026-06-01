@@ -16,6 +16,11 @@ class_name NNTrainer
 const GAMMA         : float = 0.99   # Factor de descuento
 const LEARNING_RATE : float = 0.001  # Tasa de aprendizaje
 const EXPLORATION_SIGMA : float = 0.3  # ruido de exploración, bajás con el tiempo
+const SIGMA_DECAY : float = 0.9995  # multiplica por esto cada episodio
+const SIGMA_MIN   : float = 0.05
+
+var current_sigma : float = 0.5  # empieza alto
+
 # Referencia a la red
 var nn : NeuralNetwork
 
@@ -43,14 +48,16 @@ func step(input_vec: Array, reward: float) -> Array:
 	# Acción explorada con ruido gaussiano para outputs continuos (0-3)
 	var action : Array = []
 	for i in range(4):
-		var noise : float = randfn(0.0, EXPLORATION_SIGMA)
+		var noise : float = randfn(0.0, current_sigma)
 		action.append(clampf(raw_output[i] + noise, -1.0, 1.0))
-		
+	
+	action.append(raw_output[4])
+	
 	episode_inputs.append(input_vec.duplicate())
 	episode_outputs.append(raw_output.duplicate())  # guarda el output SIN ruido
 	episode_actions.append(action.duplicate())      # guarda la acción CON ruido
 	episode_rewards.append(reward)
-	
+
 	return action  # devolvés la acción con exploración
 
 # ─────────────────────────────────────────
@@ -69,6 +76,8 @@ func end_episode(final_reward: float) -> void:
 	_update_network()
 	_clear_buffers()
 	episode_count += 1
+	
+	current_sigma = max(SIGMA_MIN, current_sigma * SIGMA_DECAY)
 
 # ─────────────────────────────────────────
 #  Calcula retornos con descuento G_t y

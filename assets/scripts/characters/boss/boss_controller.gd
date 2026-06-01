@@ -60,17 +60,31 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 func stats_normalized() -> Array:
+	var to_player : Vector2 = Vector2.ZERO
+	var dist_norm : float = 0.0
+	if near_player:
+		var diff = near_player.global_position - global_position
+		to_player = diff.normalized()
+		dist_norm = diff.length() / viewport_size.length()
+	
+	var to_bullet : Vector2 = Vector2.ZERO
+	if near_bullet:
+		to_bullet = (near_bullet.global_position - global_position).normalized()
+		
 	return [
-		health / initial_health,
 		damage / max_damage,
-		self.global_position.x / viewport_size.x,
-		self.global_position.y / viewport_size.y,
-		velocity.x / max_speed,  # estado físico real, no output de la red
-		velocity.y / max_speed,
-		shot_dir.x,
-		shot_dir.y,
-		float(boss_pashe) / max_phases
-	] + _get_near_bullet_norm_position()
+		health / initial_health,          
+		global_position.x / viewport_size.x, 
+		global_position.y / viewport_size.y, 
+		velocity.x / max_speed,           
+		velocity.y / max_speed,           
+		to_player.x, # dirección al jugador
+		to_player.y,                      
+		dist_norm, #  distancia al jugador
+		to_bullet.x, # dirección de la bala
+		to_bullet.y,                     
+		float(boss_pashe) / max_phases   # Fase del jefe
+	]
 
 func init_values() -> void:
 	viewport_size = get_viewport().get_visible_rect().size

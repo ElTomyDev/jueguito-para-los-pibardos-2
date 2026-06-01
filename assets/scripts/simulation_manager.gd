@@ -19,7 +19,8 @@ const REWARD_LOSE_EPISODE    : float = -30.0   # El boss muere
 const REWARD_FOR_SURVIVE     : float = 0.0001    # Por sobrevivir 
 const REWARD_DODGE_BULLET    : float = 0.009   # Por esquivar balas
 const REWARD_DAMAGE_RECIBE   : float = 0.1    # Por recibir daño
-const REWARD_POINT_PLAYER     : float = 0.2   # Por apuntar hacia el jugador
+const REWARD_POINT_PLAYER    : float = 0.02   # Por apuntar hacia el jugador
+const REWARD_STATIC_VELOCITY : float = 0.02 # Por quedarse quieto
 # ─────────────────────────────────────────
 #  Nodos de la NN (se instancian en _ready)
 # ─────────────────────────────────────────
@@ -37,8 +38,13 @@ var prev_player_health : float = 0.0
 var prev_boss_health : float = 0.0
 var prev_boss_dist     : float = 0.0
 
+var best_reward : float = -INF
+
 # Contador de frames para debug
-var _debug_frame_count : int = 0 
+var _debug_frame_count : int = 0
+
+const MAX_EPISODE_STEPS : int = 1800  # 30 segundos a 60fps
+var current_step : int = 0
 
 func _ready() -> void:
 	viewport_size = get_viewport().get_visible_rect().size
@@ -64,6 +70,7 @@ func _setup_nn() -> void:
 #  Spawn de entidades
 # ─────────────────────────────────────────
 func start_simulation() -> void:
+	current_step = 0
 	_debug_frame_count = 0
 	clean_entities()
 	
@@ -102,6 +109,11 @@ func clean_entities() -> void:
 #  Loop principal: corre cada physics frame
 # ─────────────────────────────────────────
 func _physics_process(_delta: float) -> void:
+	current_step += 1
+	if current_step >= MAX_EPISODE_STEPS:
+		_end_episode(false) # Si se acaba el tiempo el boss pierde
+		return
+	
 	if not episode_running:
 		return
 	
@@ -167,7 +179,11 @@ func _end_episode(boss_won: bool) -> void:
 		  " | Boss ganó: ", boss_won, 
 		  " | Recompensa total: ", trainer.total_reward_last_episode)
 	
-	# Pequeña pausa antes del respawn (opcional, podés sacarla)
+	if trainer.total_reward_last_episode > best_reward:
+		best_reward = trainer.total_reward_last_episode
+		persistence.save(nn)
+	
+	# Pequeña pausa antes del respawn
 	await get_tree().create_timer(1.5).timeout
 	start_simulation()
 
@@ -203,9 +219,20 @@ func _zero_input_vec() -> Array:
 func _compute_step_reward() -> float:
 	var reward : float = REWARD_SURVIVE_STEP
 	
+	var boss_bullets = get_tree().get_nodes_in_group("Bullets")
+	for b in boss_bullets:
+		if b.from_group == "Boss" and is_instance_valid(boss_instance.near_player):
+			var to_player_from_bullet = (boss_instance.near_player.global_position - b.global_position).normalized()
+			var bullet_alignment = to_player_from_bullet.dot(b.dir_to_mirror.normalized())
+			if bullet_alignment > 0.8:
+				reward += REWARD_POINT_PLAYER
 	# Recompensa por estar vivo
 	#if prev_boss_health > 0.0:
 	#	reward += REWARD_FOR_SURVIVE
+	if is_instance_valid(boss_instance.near_bullet):
+		var speed = boss_instance.velocity.length()
+		if speed < 10.0:
+			reward -= 0.02  # penaliza quedarse quieto con balas cerca
 	
 	# Recompensa por dañar al jugador este step
 	var current_player_health : float = _get_total_player_health()
@@ -220,13 +247,6 @@ func _compute_step_reward() -> float:
 		reward -= damage_received * REWARD_DAMAGE_RECIBE  # 200 × 0.05 = 10.0
 	elif is_instance_valid(boss_instance.near_bullet): # Esquivar activamente
 		reward += REWARD_DODGE_BULLET
-	
-	# Recompensa por apuntar hacia el jugador cuando está en modo disparo
-	if is_instance_valid(boss_instance) and is_instance_valid(boss_instance.near_player):
-		var to_player : Vector2 = (boss_instance.near_player.global_position - boss_instance.global_position).normalized()
-		var alignment : float = to_player.dot(boss_instance.shot_dir)  # entre -1 y 1
-		if boss_instance.current_action == 1:
-			reward += alignment * REWARD_POINT_PLAYER  # refuerza apuntar en la dirección correcta
 	
 	return reward
 
