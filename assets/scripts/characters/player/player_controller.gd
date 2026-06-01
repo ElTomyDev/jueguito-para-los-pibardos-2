@@ -12,7 +12,7 @@ var viewport_size: Vector2
 @onready var gun: GunController = $Gun as GunController
 
 @export_category("Player Stats")
-@export var initial_healt: float = 1000.0
+@export var initial_health: float = 1000.0
 @export var health: float = 0.0
 @export var damage: float = 100.0
 
@@ -52,12 +52,12 @@ func _physics_process(delta: float) -> void:
 
 func init_values() -> void:
 	GlobalVars.players.append(self)
-	health = initial_healt
+	health = initial_health
 	viewport_size = get_viewport().get_visible_rect().size
 
 func stats_normalized() -> Array:
 	return [
-		health / initial_healt,
+		health / initial_health,
 		global_position.x / viewport_size.x,
 		global_position.y / viewport_size.y
 	]

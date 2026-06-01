@@ -51,7 +51,7 @@ func step(input_vec: Array, reward: float) -> Array:
 		var noise : float = randfn(0.0, current_sigma)
 		action.append(clampf(raw_output[i] + noise, -1.0, 1.0))
 	
-	action.append(raw_output[4])
+	action.append(raw_output[3])
 	
 	episode_inputs.append(input_vec.duplicate())
 	episode_outputs.append(raw_output.duplicate())  # guarda el output SIN ruido
@@ -94,7 +94,7 @@ func _update_network() -> void:
 			episode_actions[t],  # acción explorada
 			returns[t]
 		)
-		nn.backward(grad, LEARNING_RATE)
+		nn.backpropagate(grad, LEARNING_RATE)
 
 # ─────────────────────────────────────────
 #  Retorno acumulado con descuento desde cada step t
@@ -148,20 +148,18 @@ func _normalize_returns(returns: Array) -> void:
 func _compute_policy_gradient(raw_output: Array, action: Array, g_t: float) -> Array:
 	var grad : Array = []
 	
-	# Outputs 0-3: gradiente de log π = (accion - output) / sigma²
-	for i in range(4):
-		grad.append(-g_t * (action[i] - raw_output[i]) / (EXPLORATION_SIGMA * EXPLORATION_SIGMA))
+	# Outputs 0-2: gradiente de log π = (accion - output) / sigma²
+	# Índices 0, 1 (movimiento) y 2 (ángulo de disparo): Continuos con Tanh
+	for i in range(3):
+		grad.append(-g_t * (action[i] - raw_output[i]) / (current_sigma * current_sigma))
 	
-	# Output 4: Bernoulli sin cambios
-	var p : float = raw_output[4]
+	var p : float = raw_output[3]
+	p = clamp(p, 1e-15, 1.0 - 1e-15)
 	
-	var taken_action : int = 1 if action[4] >= 0.5 else 0
-	var bernoulli_grad : float
-	if taken_action == 1:
-		bernoulli_grad = -g_t * (1.0 - p)
+	if action[3] == 1:
+		grad.append(-g_t * (1.0 - p))
 	else:
-		bernoulli_grad = g_t * p
-	grad.append(bernoulli_grad)
+		grad.append(-g_t * (-p))
 	
 	return grad
 

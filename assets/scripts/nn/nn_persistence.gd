@@ -11,11 +11,12 @@ const SAVE_PATH : String = "res://assets/train_data/boss_brain.json"
 # ─────────────────────────────────────────
 #  Guarda los pesos de la red en disco
 # ─────────────────────────────────────────
-func save(nn: NeuralNetwork) -> void:
+func save(nn: NeuralNetwork, trainer: NNTrainer) -> void:
 	var data       : Dictionary = nn.get_weights_data()
 	var json_str   : String     = JSON.stringify(data)
 	var file       : FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	
+	data["sigma"] = trainer.current_sigma
 	if file == null:
 		push_error("NNPersistence: no se pudo abrir el archivo para escritura: " + SAVE_PATH)
 		return
@@ -28,7 +29,7 @@ func save(nn: NeuralNetwork) -> void:
 #  Carga los pesos desde disco y los aplica a la red
 #  Retorna true si cargó con éxito, false si no había archivo
 # ─────────────────────────────────────────
-func load_into(nn: NeuralNetwork) -> bool:
+func load_into(nn: NeuralNetwork, trainer: NNTrainer) -> bool:
 	if not FileAccess.file_exists(SAVE_PATH):
 		print("NNPersistence: no existe archivo previo, empezando con pesos aleatorios.")
 		return false
@@ -53,7 +54,8 @@ func load_into(nn: NeuralNetwork) -> bool:
 	if not _validate_data(data, nn):
 		push_warning("NNPersistence: estructura de pesos incompatible, reiniciando con pesos aleatorios.")
 		return false
-	
+	if data.has("sigma"):
+		trainer.current_sigma = data["sigma"]
 	nn.set_weights_data(data)
 	print("NNPersistence: pesos cargados desde ", SAVE_PATH)
 	return true

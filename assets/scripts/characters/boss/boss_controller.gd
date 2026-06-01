@@ -9,7 +9,7 @@ var viewport_size: Vector2
 
 @export_category("Boss Stats")
 @export var initial_health: float = 10000.0
-@export var base_damage = 350.0
+@export var base_damage = 100.0
 @export var damage_increment: float = 0.1
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2
@@ -68,8 +68,11 @@ func stats_normalized() -> Array:
 		dist_norm = diff.length() / viewport_size.length()
 	
 	var to_bullet : Vector2 = Vector2.ZERO
+	var dist_bullet_norm : float = 1.0 # Añadimos distancia a la bala para ayudar a esquivar
 	if near_bullet:
-		to_bullet = (near_bullet.global_position - global_position).normalized()
+		var diff_b = near_bullet.global_position - global_position
+		to_bullet = diff_b.normalized()
+		dist_bullet_norm = diff_b.length() / viewport_size.length()
 		
 	return [
 		damage / max_damage,
@@ -83,7 +86,7 @@ func stats_normalized() -> Array:
 		dist_norm, #  distancia al jugador
 		to_bullet.x, # dirección de la bala
 		to_bullet.y,                     
-		float(boss_pashe) / max_phases   # Fase del jefe
+		dist_bullet_norm
 	]
 
 func init_values() -> void:
@@ -93,12 +96,12 @@ func init_values() -> void:
 
 func update_boss() -> void:
 	dead_if_can()
-	
 	# Actualiza la direccion de movimiento (entre -1 y 1) 
 	# Obtiene la direccion del output de la red que es una lista [x,y] en un diccionario global
 	if not GlobalVars.nn_outputs.is_empty():
 		move_dir = Vector2(GlobalVars.nn_outputs['move_dir'][0], GlobalVars.nn_outputs['move_dir'][1]).normalized()
-		shot_dir = Vector2(GlobalVars.nn_outputs['shot_dir'][0], GlobalVars.nn_outputs['shot_dir'][1]).normalized()
+		var angle : float = GlobalVars.nn_outputs['shot_angle']
+		shot_dir = Vector2(cos(angle), sin(angle))
 		current_action = GlobalVars.nn_outputs['current_action']
 	
 	near_bullet = _get_near_bullet()
@@ -136,14 +139,6 @@ func _get_near_bullet() -> Bullet:
 			min_dist = dist
 			near = bullet
 	return near
-
-func _get_near_bullet_norm_position() -> Array:
-	if near_bullet:
-		return [
-			near_bullet.global_position.x / viewport_size.x,
-			near_bullet.global_position.y / viewport_size.y,
-		]
-	return [0.0, 0.0]
 
 func can_shot() -> bool:
 	return current_action == 1 # Dispara solo en su estado de ataque de disparo

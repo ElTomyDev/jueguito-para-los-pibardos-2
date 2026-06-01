@@ -2,13 +2,13 @@ extends Node
 class_name NeuralNetwork
 
 # ─────────────────────────────────────────
-#  Arquitectura: 12 → 24 → 16 → 5
+#  Arquitectura: 15 → 24 → 16 → 5
 #  Activaciones: ReLU en capas ocultas
 #                tanh  en outputs 0-3 (direcciones continuas)
 #                sigmoid en output 4  (accion discreta)
 # ─────────────────────────────────────────
 
-const LAYER_SIZES : Array[int] = [14, 24, 16, 5]
+const LAYER_SIZES : Array[int] = [15, 24, 16, 4]
 
 # Pesos y biases por capa.
 # weights[i] es una matriz [LAYER_SIZES[i+1]][LAYER_SIZES[i]]
@@ -57,37 +57,41 @@ func forward(input_vec: Array) -> Array:
 	activations.clear()
 	z_values.clear()
 	
-	activations.append(input_vec.duplicate())  # capa 0 = inputs
-	
-	var current : Array = input_vec.duplicate()
+	var current_activation : Array = input_vec.duplicate()
+	activations.append(current_activation.duplicate())
 	
 	for layer_idx in range(weights.size()):
-		var w   : Array = weights[layer_idx]
-		var b   : Array = biases[layer_idx]
-		var out : Array = []
-		var z   : Array = []
-		var is_output_layer : bool = (layer_idx == weights.size() - 1)
+		var layer_weights : Array = weights[layer_idx]
+		var layer_biases  : Array = biases[layer_idx]
+		var next_activation : Array = []
+		var layer_z         : Array = []
 		
-		for j in range(w.size()):
-			var sum : float = b[j]
-			for k in range(current.size()):
-				sum += w[j][k] * current[k]
-			z.append(sum)
+		# Multiplicación de matriz por vector + bias (Z = W * A + B)
+		for j in range(layer_weights.size()):
+			var neuron_weights : Array = layer_weights[j]
+			var z : float = layer_biases[j]
+			for k in range(current_activation.size()):
+				z += neuron_weights[k] * current_activation[k]
+			layer_z.append(z)
 			
-			if is_output_layer:
-				# outputs 0-3: tanh  |  output 4: sigmoid
-				if j < 4:
-					out.append(_tanh(sum))
+			# --- APLICACIÓN DE LAS FUNCIONES DE ACTIVACIÓN ---
+			if layer_idx == weights.size() - 1:
+				# Capa de salida (Capa 3, tamaño 4)
+				if j < 3:
+					# Índices 0, 1, 2: move_x, move_y, shot_angle -> Tanh
+					next_activation.append(_tanh(z))
 				else:
-					out.append(_sigmoid(sum))
+					# Índice 3: current_action (disparar o no) -> Sigmoid
+					next_activation.append(_sigmoid(z))
 			else:
-				out.append(_relu(sum))
+				# Capas ocultas -> ReLU
+				next_activation.append(_relu(z))
+				
+		z_values.append(layer_z)
+		current_activation = next_activation.duplicate()
+		activations.append(current_activation.duplicate())
 		
-		z_values.append(z)
-		activations.append(out)
-		current = out
-	
-	return current
+	return current_activation
 
 # ─────────────────────────────────────────
 #  Backpropagation para REINFORCE
@@ -95,45 +99,49 @@ func forward(input_vec: Array) -> Array:
 #                    = d_loss/d_output calculado por el trainer
 #  learning_rate:    float
 # ─────────────────────────────────────────
-func backward(gradients_output: Array, learning_rate: float) -> void:
-	if activations.is_empty():
-		push_error("NeuralNetwork: forward() debe llamarse antes de backward().")
-		return
-	
-	# delta[i] = gradiente respecto a z de la capa i
+func backpropagate(loss_gradient: Array, learning_rate: float) -> void:
 	var deltas : Array = []
-	deltas.resize(weights.size())
-	
-	# --- Capa de salida ---
-	var output_delta : Array = []
-	var last_z       : Array = z_values[z_values.size() - 1]
-	for j in range(LAYER_SIZES[LAYER_SIZES.size() - 1]):
-		var d_activation : float
-		if j < 4:
-			d_activation = _tanh_derivative(last_z[j])
-		else:
-			d_activation = _sigmoid_derivative(last_z[j])
-		output_delta.append(gradients_output[j] * d_activation)
-	deltas[weights.size() - 1] = output_delta
-	
-	# --- Capas ocultas (backprop hacia atras) ---
-	for layer_idx in range(weights.size() - 2, -1, -1):
-		var next_delta : Array = deltas[layer_idx + 1]
-		var w_next     : Array = weights[layer_idx + 1]
-		var z_cur      : Array = z_values[layer_idx]
-		var cur_delta  : Array = []
+	for i in range(weights.size()):
+		deltas.append([])
 		
-		for k in range(LAYER_SIZES[layer_idx + 1]):
-			var error : float = 0.0
-			for j in range(next_delta.size()):
-				error += w_next[j][k] * next_delta[j]
-			cur_delta.append(error * _relu_derivative(z_cur[k]))
-		deltas[layer_idx] = cur_delta
+	# 1. Calcular el delta para la capa de salida (Última capa)
+	var output_layer_idx : int = weights.size() - 1
+	var output_z         : Array = z_values[output_layer_idx]
+	var output_delta     : Array = []
 	
-	# --- Actualización de pesos y biases ---
+	for j in range(loss_gradient.size()):
+		var d_activation : float = 0.0
+		if j < 3:
+			# Índices 0, 1, 2 usan la derivada de la Tanh
+			d_activation = _tanh_derivative(output_z[j])
+		else:
+			# Índice 3 usa la derivada de la Sigmoid
+			d_activation = _sigmoid_derivative(output_z[j])
+			
+		output_delta.append(loss_gradient[j] * d_activation)
+		
+	deltas[output_layer_idx] = output_delta
+	
+	# 2. Propagar el error hacia atrás (Capas ocultas)
+	# (El resto de la función backpropagate se mantiene exactamente igual a como la tenías)
+	for layer_idx in range(output_layer_idx - 1, -1, -1):
+		var layer_weights_next : Array = weights[layer_idx + 1]
+		var delta_next         : Array = deltas[layer_idx + 1]
+		var current_z          : Array = z_values[layer_idx]
+		var current_delta      : Array = []
+		
+		for j in range(LAYER_SIZES[layer_idx + 1]):
+			var error : float = 0.0
+			for k in range(delta_next.size()):
+				error += layer_weights_next[k][j] * delta_next[k]
+			current_delta.append(error * _relu_derivative(current_z[j]))
+		deltas[layer_idx] = current_delta
+		
+	# 3. Actualización de pesos y biases
+	# (Esta parte final también se mantiene idéntica a tu código original)
 	for layer_idx in range(weights.size()):
 		var delta      : Array = deltas[layer_idx]
-		var act_prev   : Array = activations[layer_idx]  # activacion de la capa anterior
+		var act_prev   : Array = activations[layer_idx]
 		
 		for j in range(delta.size()):
 			biases[layer_idx][j] -= learning_rate * delta[j]
