@@ -1,0 +1,86 @@
+[gd_scene load_steps=5 format=3 uid="uid://b3fjumhorxnno"]
+
+[ext_resource type="Script" uid="uid://cu3rrjy1r55o1" path="res://assets/scripts/ui/health_bar.gd" id="1_m6jmp"]
+[ext_resource type="Script" uid="uid://b3pqsq7nh6o3" path="res://assets/scripts/ui/train_data.gd" id="1_xxqyw"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_m6jmp"]
+line_spacing = 1.0
+font_size = 10
+
+[sub_resource type="LabelSettings" id="LabelSettings_xidqr"]
+line_spacing = 1.0
+font_size = 10
+
+[node name="TrainData" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
+script = ExtResource("1_xxqyw")
+
+[node name="Labels" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="EpisodeLabel" type="Label" parent="Labels"]
+layout_mode = 2
+
+[node name="StepLabel" type="Label" parent="Labels"]
+layout_mode = 2
+
+[node name="RewardLabel" type="Label" parent="Labels"]
+layout_mode = 2
+
+[node name="BossProgressBar" type="VBoxContainer" parent="." node_paths=PackedStringArray("health_bar")]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -150.0
+offset_right = 150.0
+offset_bottom = 45.0
+grow_horizontal = 2
+theme_override_constants/separation = 0
+script = ExtResource("1_m6jmp")
+health_bar = NodePath("BossHealth")
+is_boss = true
+
+[node name="BossHealth" type="ProgressBar" parent="BossProgressBar"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+rounded = true
+
+[node name="Label" type="Label" parent="BossProgressBar"]
+layout_mode = 2
+text = "Boss Health"
+label_settings = SubResource("LabelSettings_m6jmp")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PlayerProgressBar" type="VBoxContainer" parent="." node_paths=PackedStringArray("health_bar")]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_top = -40.0
+offset_right = 100.0
+grow_vertical = 0
+theme_override_constants/separation = 0
+script = ExtResource("1_m6jmp")
+health_bar = NodePath("PlayerHealth")
+
+[node name="Label" type="Label" parent="PlayerProgressBar"]
+layout_mode = 2
+text = "Player health"
+label_settings = SubResource("LabelSettings_xidqr")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PlayerHealth" type="ProgressBar" parent="PlayerProgressBar"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2

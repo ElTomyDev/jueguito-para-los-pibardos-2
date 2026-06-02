@@ -1,5 +1,7 @@
 extends Node2D
 
+# Episodio 119 con una recompensa entre 18.8 a 35.4
+
 var viewport_size: Vector2
 
 @export var player             : PackedScene
@@ -28,6 +30,7 @@ var persistence : NNPersistence
 # Configuracion de pasos
 const MAX_STEPS_PER_EPISODE: int = 2500 # Maximos pasos posibles
 var current_step: int = 0 # Paso actual
+var current_episode: int = 0
 
 var total_reward_step: float = 0.0
 
@@ -42,6 +45,7 @@ var is_resetting: bool = false
 func _ready() -> void:
 	_init_nn_core()
 	_spawn_entities()
+	GlobalVars.current_episode = current_episode
 
 func _physics_process(_delta: float) -> void:
 	# Si estamos en medio de un reset, o las entidades aún no se registraron en el árbol, ignoramos el frame.
@@ -53,6 +57,7 @@ func _physics_process(_delta: float) -> void:
 		return
 	
 	current_step += 1
+	GlobalVars.current_step = current_step
 	
 	# 1. Obtener entradas y ejecutar Forward Pass
 	var current_inputs: Array = _get_inputs_for_nn()
@@ -67,6 +72,7 @@ func _physics_process(_delta: float) -> void:
 	# 3. Calcular la recompensa del paso actual de entrenamiento
 	var reward: float = _calculate_reward()
 	total_reward_step += reward
+	GlobalVars.current_reward = total_reward_step
 	
 	# 4. Entrenar usando el paso anterior completo (si existe)
 	if not last_state_activation.is_empty():
@@ -136,9 +142,12 @@ func _handle_episode_end() -> void:
 	persistence.save_network(nn)
 	
 	# Reiniciar métricas de la simulación
-	print("Fin del Episodio. Pasos totales: ", steps_saved, " | Recompensa Acumulada: ", total_reward_step)
+	print("Fin del Episodio: ", current_episode, " | Pasos totales: ", steps_saved, " | Recompensa Acumulada: ", total_reward_step)
 	total_reward_step = 0.0
 	last_state_activation.clear()
+	
+	current_episode += 1
+	GlobalVars.current_episode = current_episode
 	
 	_reset_episode()
 	_reset_health_tracking()

@@ -1,5 +1,6 @@
-[gd_scene load_steps=6 format=3 uid="uid://beeao680qoeeb"]
+[gd_scene load_steps=7 format=3 uid="uid://beeao680qoeeb"]
 
+[ext_resource type="PackedScene" uid="uid://b3fjumhorxnno" path="res://assets/scenes/ui/train_data.tscn" id="2_56x64"]
 [ext_resource type="PackedScene" uid="uid://bi11g54osr03a" path="res://assets/scenes/simulation_manager.tscn" id="2_qbvmm"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_3hma4"]
@@ -15,6 +16,21 @@ size = Vector2(27, 340)
 size = Vector2(847, 20)
 
 [node name="test" type="Node2D"]
+
+[node name="TrainData" parent="." instance=ExtResource("2_56x64")]
+z_index = 1
+
+[node name="BossProgressBar" parent="TrainData" index="1"]
+anchors_preset = 10
+anchor_left = 0.0
+anchor_right = 1.0
+offset_left = 285.0
+offset_right = 585.0
+offset_bottom = 41.0
+
+[node name="PlayerProgressBar" parent="TrainData" index="2"]
+offset_top = 275.0
+offset_bottom = 316.0
 
 [node name="SimulationManager" parent="." node_paths=PackedStringArray("player_spawn_point") instance=ExtResource("2_qbvmm")]
 player_spawn_point = NodePath("SpawnPlayer")
@@ -45,4 +61,5 @@ shape = SubResource("RectangleShape2D_56x64")
 position = Vector2(403.5, -10)
 shape = SubResource("RectangleShape2D_j1tjx")
 
+[editable path="TrainData"]
 [editable path="SimulationManager"]

@@ -58,7 +58,7 @@ func _physics_process(delta: float) -> void:
 func init_boss() -> void:
 	health = max_health
 	damage = base_damage
-	
+	viewport_size = get_viewport().get_visible_rect().size
 	# Inicialización de componentes hijos
 	if floating_movement:
 		floating_movement.setup(self)
@@ -70,8 +70,6 @@ func init_boss() -> void:
 	GlobalVars.boss = self
 
 func update_boss(delta) -> void:
-	if viewport_size == Vector2.ZERO:
-		viewport_size = get_viewport().get_visible_rect().size
 	# Actualiza valores en base al output de la red.
 	if GlobalVars.nn_outputs.has("move_dir"):
 		var raw_dir = GlobalVars.nn_outputs["move_dir"]
