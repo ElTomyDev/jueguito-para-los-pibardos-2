@@ -46,7 +46,6 @@ var near_player: PlayerController = null
 var near_bullet: Bullet = null
 
 func _ready() -> void:
-	viewport_size = get_viewport_rect().size
 	init_boss()
 
 @warning_ignore("unused_parameter")
@@ -71,7 +70,8 @@ func init_boss() -> void:
 	GlobalVars.boss = self
 
 func update_boss(delta) -> void:
-	
+	if viewport_size == Vector2.ZERO:
+		viewport_size = get_viewport().get_visible_rect().size
 	# Actualiza valores en base al output de la red.
 	if GlobalVars.nn_outputs.has("move_dir"):
 		var raw_dir = GlobalVars.nn_outputs["move_dir"]
