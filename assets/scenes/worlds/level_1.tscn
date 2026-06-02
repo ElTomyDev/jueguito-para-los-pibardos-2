@@ -24,7 +24,7 @@ position = Vector2(519, 113)
 
 [node name="MapLimits" type="StaticBody2D" parent="."]
 collision_layer = 8
-collision_mask = 0
+collision_mask = 3
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="MapLimits"]
 position = Vector2(-10, 160)

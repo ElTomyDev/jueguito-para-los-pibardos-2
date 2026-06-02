@@ -91,6 +91,10 @@ func _calculate_reward() -> float:
 	return r
 
 func _handle_episode_end() -> void:
+	print("[SIM] Episode end. boss_valid=", is_instance_valid(GlobalVars.boss), 
+		  " players=", GlobalVars.players.size(),
+		  " step=", current_step,
+		  " boss_health=", GlobalVars.boss.health if is_instance_valid(GlobalVars.boss) else "N/A")
 	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
 	is_resetting = true
 	
@@ -211,5 +215,12 @@ func _spawn_entities() -> void:
 
 func _can_episode_end() -> bool:
 	# Validación de seguridad por si el Boss es nulo en el frame actual
-	if not is_instance_valid(GlobalVars.boss): return true
-	return current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players.is_empty()
+	if not is_instance_valid(GlobalVars.boss): 
+		print("[SIM] _can_episode_end: boss inválido")
+		return true
+	var result = current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players.is_empty()
+	if result:
+		print("[SIM] _can_episode_end TRUE: step=", current_step, 
+			  " boss_health=", GlobalVars.boss.health,
+			  " players=", GlobalVars.players.size())
+	return result

@@ -89,6 +89,9 @@ func update_boss(delta) -> void:
 		floating_movement.update(delta)
 	_update_action(delta)
 	move_and_slide()
+	# Clamp para mantener al boss dentro del viewport
+	global_position.x = clamp(global_position.x, 0.0, viewport_size.x)
+	global_position.y = clamp(global_position.y, 0.0, viewport_size.y)
 
 func get_inputs() -> Array:
 	var near_bullet_pos = Vector2.ZERO
@@ -107,6 +110,7 @@ func get_inputs() -> Array:
 
 func dead_if_can() -> void:
 	if health <= 0:
+		print("[BOSS] Murió. health=", health, " | caller: ", get_stack())
 		set_process(false)
 		set_physics_process(false)
 		GlobalVars.boss = null
