@@ -7,6 +7,17 @@ var viewport_size: Vector2
 @export var player_spawn_point : Node2D
 @export var boss_spawn_point    : Node2D
 
+# Para recompensas y penalizaciones
+const REWARD_DAMAGE_DEALT    : float =  5.0    # Por dañar al jugador
+const REWARD_DAMAGE_RECIBE   : float = -5.0    # Por recibir daño
+const REWARD_SURVIVE_STEP    : float =  0.01   # Por sobrevivir un paso
+const REWARD_WIN_EPISODE     : float = 150.0   # Por ganar la partida
+const REWARD_LOSE_EPISODE    : float = -150.0  # Por perden la partida
+const REWARD_DODGE_BULLET    : float = 0.008   # Por esquivar balas
+const REWARD_NEAR_BULLET     : float = 0.009   # Por disparar cerca del jugador
+
+const PROXIMITY_MAX_RANGE    : float = 60.0    # Rango de recompensa para proximidad de bala
+
 # ---------------
 #  Nodos de la NN
 # ---------------
@@ -15,7 +26,7 @@ var trainer     : NNTrainer
 var persistence : NNPersistence
 
 # Configuracion de pasos
-const MAX_STEPS_PER_EPISODE: int = 3000 # Maximos pasos posibles
+const MAX_STEPS_PER_EPISODE: int = 2500 # Maximos pasos posibles
 var current_step: int = 0 # Paso actual
 
 var total_reward_step: float = 0.0
@@ -70,31 +81,41 @@ func _physics_process(_delta: float) -> void:
 		_handle_episode_end()
 
 func _calculate_reward() -> float:
-	var r: float = 0.0
+	var reward: float = 0.0
+	if not is_instance_valid(GlobalVars.boss): return reward
 	
-	# Recompensa por supervivencia temporal básica
-	r += 0.01 
+	# 1. Recompensa por daño infligido al jugador
+	var current_player_health = GlobalVars.players[0].health
+	var damage_dealt = last_player_health - current_player_health
+	if damage_dealt > 0:
+		reward += damage_dealt * REWARD_DAMAGE_DEALT
 	
-	# Recompensa/Castigo basado en la variación de vidas
-	if is_instance_valid(GlobalVars.boss):
-		var boss_damage_taken: float = last_boss_health - GlobalVars.boss.health
-		if boss_damage_taken > 0.0:
-			r -= (boss_damage_taken * 0.1) # Penalización severa por dejarse pegar
-		last_boss_health = GlobalVars.boss.health
-
-	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
-		var player_damage_taken: float = last_player_health - GlobalVars.players[0].health
-		if player_damage_taken > 0.0:
-			r += (player_damage_taken * 0.2) # Recompensa alta por dañar al jugador
-		last_player_health = GlobalVars.players[0].health
-		
-	return r
+	# 2. Castigo por recibir daño el Boss
+	var damage_taken = last_boss_health - GlobalVars.boss.health
+	if damage_taken > 0:
+		reward += damage_taken * REWARD_DAMAGE_RECIBE
+	
+	# 4. Incentivo por esquivar balas cercanas
+	if is_instance_valid(GlobalVars.boss.near_bullet):
+		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_bullet.global_position)
+		if dist > 150.0 and dist < 300.0:
+			reward += REWARD_DODGE_BULLET
+	
+	# 1. Calcular recompensa por proximidad de balas al jugador
+	var bullets = GlobalVars.bullets
+	var p = GlobalVars.players[0] if GlobalVars.players.size() > 0 else null
+	
+	if p and bullets.size() > 0:
+		for b in bullets:
+			# Solo evaluamos balas que no sean del Boss (o las que quieras premiar)
+			if is_instance_valid(b) and b.from_group != "Boss": 
+				var dist = b.global_position.distance_to(p.global_position)
+				if dist <= PROXIMITY_MAX_RANGE:
+					reward += REWARD_NEAR_BULLET * (1.0 - (dist / PROXIMITY_MAX_RANGE))
+	
+	return reward
 
 func _handle_episode_end() -> void:
-	print("[SIM] Episode end. boss_valid=", is_instance_valid(GlobalVars.boss), 
-		  " players=", GlobalVars.players.size(),
-		  " step=", current_step,
-		  " boss_health=", GlobalVars.boss.health if is_instance_valid(GlobalVars.boss) else "N/A")
 	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
 	is_resetting = true
 	
@@ -216,11 +237,6 @@ func _spawn_entities() -> void:
 func _can_episode_end() -> bool:
 	# Validación de seguridad por si el Boss es nulo en el frame actual
 	if not is_instance_valid(GlobalVars.boss): 
-		print("[SIM] _can_episode_end: boss inválido")
 		return true
 	var result = current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players.is_empty()
-	if result:
-		print("[SIM] _can_episode_end TRUE: step=", current_step, 
-			  " boss_health=", GlobalVars.boss.health,
-			  " players=", GlobalVars.players.size())
 	return result

@@ -110,7 +110,6 @@ func get_inputs() -> Array:
 
 func dead_if_can() -> void:
 	if health <= 0:
-		print("[BOSS] Murió. health=", health, " | caller: ", get_stack())
 		set_process(false)
 		set_physics_process(false)
 		GlobalVars.boss = null
