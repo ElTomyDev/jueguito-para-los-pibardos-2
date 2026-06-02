@@ -84,31 +84,31 @@ func _calculate_reward() -> float:
 	var reward: float = 0.0
 	if not is_instance_valid(GlobalVars.boss): return reward
 	
-	# 1. Recompensa por daño infligido al jugador
+	# Recompensa por daño infligido al jugador
 	var current_player_health = GlobalVars.players[0].health
 	var damage_dealt = last_player_health - current_player_health
 	if damage_dealt > 0:
 		reward += damage_dealt * REWARD_DAMAGE_DEALT
+	last_player_health = GlobalVars.players[0].health
 	
-	# 2. Castigo por recibir daño el Boss
+	# Castigo por recibir daño el Boss
 	var damage_taken = last_boss_health - GlobalVars.boss.health
 	if damage_taken > 0:
 		reward += damage_taken * REWARD_DAMAGE_RECIBE
+	last_boss_health = GlobalVars.boss.health
 	
-	# 4. Incentivo por esquivar balas cercanas
+	# Incentivo por esquivar balas cercanas
 	if is_instance_valid(GlobalVars.boss.near_bullet):
 		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_bullet.global_position)
 		if dist > 150.0 and dist < 300.0:
 			reward += REWARD_DODGE_BULLET
-	
-	# 1. Calcular recompensa por proximidad de balas al jugador
+
+	# Por apuntar al jugador
 	var bullets = GlobalVars.bullets
 	var p = GlobalVars.players[0] if GlobalVars.players.size() > 0 else null
-	
 	if p and bullets.size() > 0:
 		for b in bullets:
-			# Solo evaluamos balas que no sean del Boss (o las que quieras premiar)
-			if is_instance_valid(b) and b.from_group != "Boss": 
+			if is_instance_valid(b) and b.from_group != "Players": 
 				var dist = b.global_position.distance_to(p.global_position)
 				if dist <= PROXIMITY_MAX_RANGE:
 					reward += REWARD_NEAR_BULLET * (1.0 - (dist / PROXIMITY_MAX_RANGE))
