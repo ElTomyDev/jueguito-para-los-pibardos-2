@@ -40,8 +40,6 @@ func _physics_process(_delta: float) -> void:
 	 # Esperamos a que ambas entidades estén registradas antes de simular
 	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
 		return
-	if is_instance_valid(GlobalVars.boss):
-		last_boss_health = GlobalVars.boss.max_health # O 10000.0 directamente
 	
 	current_step += 1
 	
