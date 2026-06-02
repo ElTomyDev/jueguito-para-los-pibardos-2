@@ -1,7 +1,7 @@
 extends RefCounted
 class_name NNTrainer
 
-var lr: float = 0.01          # Learning Rate
+var lr: float = 0.001          # Learning Rate
 var gamma: float = 0.99       # Factor de descuento para recompensas futuras
 
 func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictionary, reward: float, done: bool, action_taken: int) -> void:
@@ -31,7 +31,7 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	for i in range(3):
 		var tanh_grad: float = 1.0 - (state_act["actor_outputs"][i] * state_act["actor_outputs"][i])
 		# Si el movimiento o ángulo fue bueno (advantage > 0), reforzamos la dirección actual
-		d_actor[i] = -advantage * state_act["actor_outputs"][i] * tanh_grad
+		d_actor[i] = -advantage * tanh_grad
 	
 	# Para la acción discreta (0 o 1)
 	var current_action_prob: float = state_act["actor_outputs"][3]

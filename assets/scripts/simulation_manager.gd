@@ -8,15 +8,15 @@ var viewport_size: Vector2
 @export var boss_spawn_point    : Node2D
 
 # Para recompensas y penalizaciones
-const REWARD_DAMAGE_DEALT    : float =  5.0    # Por dañar al jugador
-const REWARD_DAMAGE_RECIBE   : float = -5.0    # Por recibir daño
-const REWARD_SURVIVE_STEP    : float =  0.01   # Por sobrevivir un paso
-const REWARD_WIN_EPISODE     : float = 150.0   # Por ganar la partida
-const REWARD_LOSE_EPISODE    : float = -150.0  # Por perden la partida
-const REWARD_DODGE_BULLET    : float = 0.008   # Por esquivar balas
-const REWARD_NEAR_BULLET     : float = 0.009   # Por disparar cerca del jugador
+const REWARD_DAMAGE_DEALT    : float =  0.05    # Por dañar al jugador
+const REWARD_DAMAGE_RECIBE   : float = -0.05    # Por recibir daño
+const REWARD_SURVIVE_STEP    : float =  0.001   # Por sobrevivir un paso
+const REWARD_WIN_EPISODE     : float = 50.0     # Por ganar la partida
+const REWARD_LOSE_EPISODE    : float = -50.0    # Por perden la partida
+const REWARD_DODGE_BULLET    : float = 0.0      # Por esquivar balas
+const REWARD_NEAR_BULLET     : float = 0.05     # Por disparar cerca del jugador
 
-const PROXIMITY_MAX_RANGE    : float = 60.0    # Rango de recompensa para proximidad de bala
+const PROXIMITY_MAX_RANGE    : float = 60.0     # Rango de recompensa para proximidad de bala
 
 # ---------------
 #  Nodos de la NN
@@ -81,7 +81,7 @@ func _physics_process(_delta: float) -> void:
 		_handle_episode_end()
 
 func _calculate_reward() -> float:
-	var reward: float = 0.0
+	var reward: float = REWARD_SURVIVE_STEP
 	if not is_instance_valid(GlobalVars.boss): return reward
 	
 	# Recompensa por daño infligido al jugador
@@ -108,7 +108,7 @@ func _calculate_reward() -> float:
 	var p = GlobalVars.players[0] if GlobalVars.players.size() > 0 else null
 	if p and bullets.size() > 0:
 		for b in bullets:
-			if is_instance_valid(b) and b.from_group != "Players": 
+			if is_instance_valid(b) and b.from_group == "Boss": 
 				var dist = b.global_position.distance_to(p.global_position)
 				if dist <= PROXIMITY_MAX_RANGE:
 					reward += REWARD_NEAR_BULLET * (1.0 - (dist / PROXIMITY_MAX_RANGE))
@@ -126,9 +126,9 @@ func _handle_episode_end() -> void:
 	if not last_state_activation.is_empty():
 		var final_reward: float = 0.0
 		if GlobalVars.players.is_empty():
-			final_reward += 10.0 # Premio gordo por matar al jugador
+			final_reward += REWARD_WIN_EPISODE # Premio gordo por matar al jugador
 		elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
-			final_reward -= 10.0 # Castigo gordo por morir
+			final_reward += REWARD_LOSE_EPISODE # Castigo gordo por morir
 			
 		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
 	
