@@ -1,149 +1,99 @@
-extends Node
+extends RefCounted
 class_name NeuralNetwork
 
-# ─────────────────────────────────────────
-#  Arquitectura: 15 → 24 → 16 → 4
-#  Activaciones: ReLU en capas ocultas
-#                tanh  en outputs 0-2 (movimiento y ángulo)
-#                sigmoid en output 3  (acción discreta de disparo)
-# ─────────────────────────────────────────
+# Arquitectura de la red
+var input_size: int = 11
+var hidden_size: int = 16
+var actor_output_size: int = 4  # [move_x, move_y, shot_angle, action_logits]
+var critic_output_size: int = 1 # [value]
 
-const LAYER_SIZES : Array[int] = [15, 24, 16, 5]
+# Pesos y Sesgos (Capa Oculta Compartida)
+var W1: Array = [] # Matriz hidden_size x input_size
+var b1: Array = [] # Vector hidden_size
 
-const LEARNING_RATE : float = 0.001
+# Pesos y Sesgos de la cabeza del Actor
+var W_actor: Array = [] # Matriz actor_output_size x hidden_size
+var b_actor: Array = [] # Vector actor_output_size
 
-# Pesos y biases por capa.
-# weights[i] es una matriz [LAYER_SIZES[i+1]][LAYER_SIZES[i]]
-# biases[i]  es un vector  [LAYER_SIZES[i+1]]
-var weights : Array = []
-var biases  : Array = []
-
-# Guardamos las activaciones de cada capa para el backprop
-var activations : Array = []   # activations[i] → vector post-activacion de capa i
-var z_values    : Array = []   # z_values[i]    → vector pre-activacion  de capa i
+# Pesos y Sesgos de la cabeza del Critic
+var W_critic: Array = [] # Matriz critic_output_size x hidden_size
+var b_critic: Array = [] # Vector critic_output_size
 
 func _init() -> void:
-	_initialize_weights()
+	_init_weights()
 
-# ─────────────────────────────────────────
-#  Inicialización de pesos (He initialization para ReLU)
-# ─────────────────────────────────────────
-func _initialize_weights() -> void:
-	weights.clear()
-	biases.clear()
-	for i in range(LAYER_SIZES.size() - 1):
-		var fan_in  : int = LAYER_SIZES[i]
-		var fan_out : int = LAYER_SIZES[i + 1]
-		var std     : float = sqrt(2.0 / fan_in)
-		
-		var w : Array = []
-		for _j in range(fan_out):
-			var row : Array = []
-			for _k in range(fan_in):
-				row.append(randf_range(-std, std))
-			w.append(row)
-		weights.append(w)
-		
-		var b : Array = []
-		for _j in range(fan_out):
-			b.append(0.0)
-		biases.append(b)
-
-# ─────────────────────────────────────────
-#  Forward pass
-# ─────────────────────────────────────────
-func forward(input_vec: Array) -> Array:
-	activations = [input_vec]
-	z_values = []
+func _init_weights() -> void:
+	# Inicialización de Xavier/Glorot para evitar desvanecimiento de gradiente
+	W1 = _random_matrix(hidden_size, input_size, sqrt(2.0 / input_size))
+	b1 = _zero_vector(hidden_size)
 	
-	for i in range(weights.size()):
-		var next_activations = []
-		var next_z = []
-		for j in range(LAYER_SIZES[i+1]):
-			var z = biases[i][j]
-			for k in range(LAYER_SIZES[i]):
-				z += weights[i][j][k] * activations[i][k]
-			next_z.append(z)
-			
-			# Activación:
-			if i == weights.size() - 1:
-				if j == 4: # Critic: Lineal
-					next_activations.append(z)
-				elif j == 3: # Disparo: Sigmoid
-					next_activations.append(1.0 / (1.0 + exp(-clampf(z, -20.0, 20.0))))
-				else: # Movimiento: Tanh
-					next_activations.append(tanh(z))
-			else:
-				next_activations.append(max(0.0, z)) # ReLU
-		z_values.append(next_z)
-		activations.append(next_activations)
-	return activations.back()
-
-# ─────────────────────────────────────────
-#  Backpropagation para REINFORCE
-# ─────────────────────────────────────────
-func backprop_actor_critic(grad_actor: Array, advantage: float) -> void:
-	var num_layers = weights.size()
-	var last_layer_idx = weights.size() - 1
-	var deltas = []
-	deltas.resize(num_layers)
-
-	# 1. Delta Capa Salida
-	var last_delta = []
-	for i in range(4): last_delta.append(grad_actor[i]) # Actor
-	last_delta.append(-advantage) # Critic
-	deltas[num_layers - 1] = last_delta
-
-	# 2. Backprop Capas Ocultas
-	for layer_idx in range(num_layers - 2, -1, -1):
-		var current_delta = []
-		var next_weights = weights[layer_idx + 1]
-		var next_delta = deltas[layer_idx + 1]
-		for j in range(LAYER_SIZES[layer_idx + 1]):
-			var error = 0.0
-			for k in range(next_delta.size()):
-				error += next_weights[k][j] * next_delta[k]
-			current_delta.append(error * (1.0 if z_values[layer_idx][j] > 0.0 else 0.0))
-		deltas[layer_idx] = current_delta
+	W_actor = _random_matrix(actor_output_size, hidden_size, sqrt(2.0 / hidden_size))
+	b_actor = _zero_vector(actor_output_size)
 	
-		# Gradiente calculado: grad_actor contiene 4 del Actor y 1 del Critic
-	deltas[last_layer_idx] = grad_actor 
-	
-	# 3. Actualización
-	for i in range(num_layers):
-		for j in range(deltas[i].size()):
-			# El Critic (índice 4) es regresión lineal, no requiere derivada ReLU/Tanh
-			var is_critic = (i == num_layers - 1 and j == 4)
-			var lr = (LEARNING_RATE * 0.5) if is_critic else LEARNING_RATE
-			
-			biases[i][j] -= lr * deltas[i][j]
-			for k in range(activations[i].size()):
-				weights[i][j][k] -= lr * deltas[i][j] * activations[i][k]
-# ─────────────────────────────────────────
-#  Funciones de activación y sus derivadas (PROTEGIDAS contra NaN)
-# ─────────────────────────────────────────
+	W_critic = _random_matrix(critic_output_size, hidden_size, sqrt(2.0 / hidden_size))
+	b_critic = _zero_vector(critic_output_size)
+
+# --- Funciones de Activación ---
 func _relu(x: float) -> float:
 	return max(0.0, x)
 
-func _relu_derivative(x: float) -> float:
-	return 1.0 if x > 0.0 else 0.0
-
 func _tanh(x: float) -> float:
-	# Acotamos x para evitar desbordamientos en exp(x)
-	var clamped_x : float = clampf(x, -20.0, 20.0)
-	var e_pos : float = exp(clamped_x)
-	var e_neg : float = exp(-clamped_x)
-	return (e_pos - e_neg) / (e_pos + e_neg)
-
-func _tanh_derivative(x: float) -> float:
-	var t : float = _tanh(x)
-	return 1.0 - t * t
+	return (exp(x) - exp(-x)) / (exp(x) + exp(-x))
 
 func _sigmoid(x: float) -> float:
-	# Clamping para evitar overflow con valores muy negativos
-	var clamped_x : float = clampf(x, -20.0, 20.0)
-	return 1.0 / (1.0 + exp(-clamped_x))
+	return 1.0 / (1.0 + exp(-x))
 
-func _sigmoid_derivative(x: float) -> float:
-	var s : float = _sigmoid(x)
-	return s * (1.0 - s)
+# --- Forward Pass ---
+# Devuelve un Diccionario con las activaciones de todas las capas (necesario para el backpropagation)
+func forward(inputs: Array) -> Dictionary:
+	var h_act: Array = []
+	for i in range(hidden_size):
+		var sum: float = b1[i]
+		for j in range(input_size):
+			sum += inputs[j] * W1[i][j]
+		h_act.append(_relu(sum))
+	
+	# Cabeza del Actor
+	var actor_raw: Array = []
+	for i in range(actor_output_size):
+		var sum: float = b_actor[i]
+		for j in range(hidden_size):
+			sum += h_act[j] * W_actor[i][j]
+		actor_raw.append(sum)
+	
+	# Mapeamos salidas del Actor: move_x, move_y y shot_angle usan Tanh (-1 a 1). Action usa Sigmoid para probabilidad.
+	var actor_outputs: Array = [
+		_tanh(actor_raw[0]),
+		_tanh(actor_raw[1]),
+		_tanh(actor_raw[2]),
+		_sigmoid(actor_raw[3])
+	]
+	
+	# Cabeza del Critic (Salida lineal para el valor del estado)
+	var critic_val: float = b_critic[0]
+	for j in range(hidden_size):
+		critic_val += h_act[j] * W_critic[0][j]
+	
+	return {
+		"inputs": inputs,
+		"hidden": h_act,
+		"actor_raw": actor_raw,
+		"actor_outputs": actor_outputs,
+		"critic_value": critic_val
+	}
+
+# --- Utilitarios Matemáticos ---
+func _random_matrix(rows: int, cols: int, scale: float) -> Array:
+	var mat: Array = []
+	for i in range(rows):
+		var row: Array = []
+		for j in range(cols):
+			row.append(randf_range(-1.0, 1.0) * scale)
+		mat.append(row)
+	return mat
+
+func _zero_vector(size: int) -> Array:
+	var vec: Array = []
+	for i in range(size):
+		vec.append(0.0)
+	return vec

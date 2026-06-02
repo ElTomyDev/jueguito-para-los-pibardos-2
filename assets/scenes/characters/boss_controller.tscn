@@ -33,6 +33,7 @@ script = ExtResource("3_n7ob0")
 
 [node name="ShotAttack" type="Node2D" parent="BossMechanics"]
 script = ExtResource("4_5dy75")
+is_boss = true
 
 [node name="PlayerDetect" type="Area2D" parent="."]
 collision_layer = 0

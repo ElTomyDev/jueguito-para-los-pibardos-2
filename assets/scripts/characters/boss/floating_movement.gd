@@ -12,8 +12,8 @@ func update(delta: float) -> void:
 func move(delta: float) -> void:
 	var norm_dir: Vector2 = boss.move_dir.normalized()
 	if norm_dir != Vector2.ZERO:
-		boss.velocity.x = lerpf(boss.velocity.x, boss.max_speed * boss.norm_dir.x, boss.acceleration_speed * delta)
-		boss.velocity.y = lerpf(boss.velocity.y, boss.max_speed * boss.norm_dir.y, boss.acceleration_speed * delta)
+		boss.velocity.x = lerpf(boss.velocity.x, boss.max_speed * norm_dir.x, boss.acceleration_speed * delta)
+		boss.velocity.y = lerpf(boss.velocity.y, boss.max_speed * norm_dir.y, boss.acceleration_speed * delta)
 	else:
-		boss.velocity.x = lerpf(boss.velocity.x, 0.0, boss.acceleration_speed * delta)
-		boss.velocity.y = lerpf(boss.velocity.y, 0.0, boss.acceleration_speed * delta)
+		boss.velocity.x = lerpf(boss.velocity.x, 0.0, boss.deceleration_speed * delta)
+		boss.velocity.y = lerpf(boss.velocity.y, 0.0, boss.deceleration_speed * delta)

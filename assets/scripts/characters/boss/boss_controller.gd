@@ -16,7 +16,7 @@ var viewport_size: Vector2
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
-@export var force_attack_mode: bool = false
+@export var force_attack_mode: bool = true
 @export var attack_forced: int = 1
 @export var rotation_speed: float = 5.0
 @export var fire_rate: float = 0.1
@@ -38,6 +38,9 @@ var shot_angle: float = 0.0
 var damage: float = 0.0
 var health: float = 0.0
 
+var bullet_from_group: StringName = "Boss"
+var bullet_to_group: StringName = "Players"
+
 # Referencias de entorno para los inputs de la simulación
 var near_player: PlayerController = null
 var near_bullet: Bullet = null
@@ -52,7 +55,6 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	update_boss(delta)
-	move_and_slide()
 
 func init_boss() -> void:
 	health = max_health
@@ -69,18 +71,24 @@ func init_boss() -> void:
 	GlobalVars.boss = self
 
 func update_boss(delta) -> void:
+	
+	# Actualiza valores en base al output de la red.
+	if GlobalVars.nn_outputs.has("move_dir"):
+		var raw_dir = GlobalVars.nn_outputs["move_dir"]
+		if typeof(raw_dir) == TYPE_ARRAY and raw_dir.size() >= 2:
+			move_dir = Vector2(raw_dir[0], raw_dir[1])
+	if GlobalVars.nn_outputs.has("current_action"):
+		current_action = int(GlobalVars.nn_outputs["current_action"]) if not force_attack_mode else attack_forced
+	if GlobalVars.nn_outputs.has("shot_angle"):
+		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
+	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
 	
-	# Actualiza valores desde el array global que almacena los outputs de la red en durante la simulacion
-	if GlobalVars.nn_outputs.is_empty():
-		return
-	self.move_dir = Vector2(GlobalVars.nn_outputs["move_dir"][0], GlobalVars.nn_outputs["move_dir"][1])
-	self.current_action = attack_forced if force_attack_mode else int(GlobalVars.nn_outputs["current_action"])
-	self.shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
-	
+	if is_instance_valid(floating_movement):
+		floating_movement.update(delta)
 	_update_action(delta)
-	floating_movement.update(delta)
+	move_and_slide()
 
 func get_inputs() -> Array:
 	var near_bullet_pos = Vector2.ZERO
@@ -99,8 +107,8 @@ func get_inputs() -> Array:
 
 func dead_if_can() -> void:
 	if health <= 0:
+		GlobalVars.boss = null
 		queue_free()
-	GlobalVars.boss = null
 
 func _get_near_player() -> PlayerController:
 	if GlobalVars.players.is_empty(): 
@@ -117,7 +125,7 @@ func _get_near_player() -> PlayerController:
 	return near
 
 func _get_near_bullet() -> Bullet:
-	var bullets: Array = get_tree().get_nodes_in_group("Bullets")
+	var bullets: Array = GlobalVars.bullets
 	if bullets.is_empty(): 
 		return null
 	var near: Bullet = null

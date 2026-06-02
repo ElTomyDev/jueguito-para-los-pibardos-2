@@ -43,7 +43,7 @@ func move_bullet(delta:float) -> void:
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:
 		queue_free()
-		GlobalVars.bullet.pop_at(GlobalVars.bullet.find(self))
+		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))
 	life_time -= delta
 
 func _draw() -> void:
@@ -51,11 +51,6 @@ func _draw() -> void:
 
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group(group_target):
-		target = area
-		target.apply_damage(damage)
-		GlobalVars.bullet.pop_at(GlobalVars.bullet.find(self)) # Elimina la bala de la variable global
+		area.apply_damage(damage)
+		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
 		queue_free()
-
-func _on_area_exited(area: Area2D) -> void:
-	if area.is_in_group(group_target):
-		target = null
