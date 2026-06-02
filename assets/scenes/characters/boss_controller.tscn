@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://bslnh33d3sn7i" path="res://assets/scripts/characters/boss/boss_controller.gd" id="1_agbej"]
 [ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="2_e77qu"]
 [ext_resource type="Script" uid="uid://y32pm2gjq5x3" path="res://assets/scripts/characters/boss/floating_movement.gd" id="3_n7ob0"]
-[ext_resource type="Script" uid="uid://b708ogaqfsg3x" path="res://assets/scripts/characters/boss/ball_attack.gd" id="4_4m0k2"]
+[ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/shot_attack.gd" id="4_5dy75"]
 [ext_resource type="Script" uid="uid://dv8tqb8qgxvle" path="res://assets/scripts/characters/damage_area.gd" id="5_5dy75"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_n7ob0"]
@@ -31,8 +31,8 @@ shape = SubResource("RectangleShape2D_n7ob0")
 [node name="floating_movement" type="Node2D" parent="BossMechanics"]
 script = ExtResource("3_n7ob0")
 
-[node name="BallAttack" type="Node2D" parent="BossMechanics"]
-script = ExtResource("4_4m0k2")
+[node name="ShotAttack" type="Node2D" parent="BossMechanics"]
+script = ExtResource("4_5dy75")
 
 [node name="PlayerDetect" type="Area2D" parent="."]
 collision_layer = 0

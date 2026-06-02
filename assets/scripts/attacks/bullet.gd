@@ -28,6 +28,7 @@ func _ready() -> void:
 			get_global_mouse_position() + Vector2(disp_x, disp_y),
 			100.0, self, false
 		)
+	GlobalVars.bullets.append(self) # Agrega la bala a las variables globales para usarlas en el simulation_manager.gd
 
 func _process(delta: float) -> void:
 	_dead_if_can(delta)
@@ -42,6 +43,7 @@ func move_bullet(delta:float) -> void:
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:
 		queue_free()
+		GlobalVars.bullet.pop_at(GlobalVars.bullet.find(self))
 	life_time -= delta
 
 func _draw() -> void:
@@ -51,6 +53,7 @@ func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group(group_target):
 		target = area
 		target.apply_damage(damage)
+		GlobalVars.bullet.pop_at(GlobalVars.bullet.find(self)) # Elimina la bala de la variable global
 		queue_free()
 
 func _on_area_exited(area: Area2D) -> void:

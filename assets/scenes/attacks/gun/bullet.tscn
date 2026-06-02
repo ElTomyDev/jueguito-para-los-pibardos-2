@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://bmjpg8b3lhmb"]
 
-[ext_resource type="Script" uid="uid://b5778vs5in57g" path="res://assets/scripts/attacks/gun/bullet.gd" id="1_afa7u"]
+[ext_resource type="Script" uid="uid://b5778vs5in57g" path="res://assets/scripts/attacks/bullet.gd" id="1_afa7u"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_liesp"]
 radius = 3.0

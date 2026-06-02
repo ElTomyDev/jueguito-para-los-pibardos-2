@@ -1,8 +1,7 @@
 extends Node
 
-
-
-var boss_health: float = 0.0
 var players: Array[PlayerController] = []
+var bullets: Array[Bullet] = []
+var boss: BossController = null
 
 var nn_outputs: Dictionary={}

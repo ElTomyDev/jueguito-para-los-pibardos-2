@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://cra5e1yrb41sb"]
 
-[ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/gun/gun.gd" id="1_j7nqa"]
+[ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/shot_attack.gd" id="1_j7nqa"]
 [ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="2_p22ur"]
 
 [node name="Gun" type="Node2D"]

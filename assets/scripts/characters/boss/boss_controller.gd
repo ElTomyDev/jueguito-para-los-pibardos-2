@@ -6,23 +6,20 @@ var viewport_size: Vector2
 # Componentes mecánicos (asegurate de que los paths a los nodos hijos sean los correctos en tu escena)
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
-@onready var ball_attack: BallAttack = $BossMechanics/BallAttack as BallAttack
+@onready var shot_attack: ShotAttack = $BossMechanics/ShotAttack as ShotAttack
 
 @export_category("Boss Stats")
-@export var initial_health: float = 10000.0
+@export var max_health: float = 10000.0
 @export var base_damage: float = 100.0
 @export var damage_increment: float = 0.1
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
+@export var force_attack_mode: bool = false
+@export var attack_forced: int = 1
 @export var rotation_speed: float = 5.0
 @export var fire_rate: float = 0.1
-
-@export_category("Bullet Settings")
-@export var bullet_speed: float = 580.0
-@export var bullet_life_time: float = 3.5
-@export var bullet_dispersion: float = 8.0
 
 @export_category("Movement Parameters")
 @export var max_speed: float = 150.0
@@ -46,52 +43,64 @@ var near_player: PlayerController = null
 var near_bullet: Bullet = null
 
 func _ready() -> void:
-	damage_area.setup(self)
-	init_values()
+	viewport_size = get_viewport_rect().size
+	init_boss()
 
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	dead_if_can()
 
 func _physics_process(delta: float) -> void:
-	_update_environment_sensors()
-	
-	_read_nn_inputs()
-
-	floating_movement.update(delta)
-	update_action(delta)
+	update_boss(delta)
 	move_and_slide()
 
-func init_values() -> void:
-	health = initial_health
+func init_boss() -> void:
+	health = max_health
 	damage = base_damage
-	GlobalVars.boss_health = health
 	
 	# Inicialización de componentes hijos
 	if floating_movement:
 		floating_movement.setup(self)
-	if ball_attack:
-		ball_attack.setup(self)
+	if shot_attack:
+		shot_attack.setup(self)
+	if damage_area:
+		damage_area.setup(self)
+	
+	GlobalVars.boss = self
 
-func _update_environment_sensors() -> void:
+func update_boss(delta) -> void:
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
 	
-	# Sincronizar el estado de vida actual para el calculador de rewards
-	GlobalVars.boss_health = health
-
-func _read_nn_inputs() -> void:
-	# Evitamos colgar el script si los outputs globales todavía no se inicializaron
+	# Actualiza valores desde el array global que almacena los outputs de la red en durante la simulacion
 	if GlobalVars.nn_outputs.is_empty():
 		return
-		
-	self.move_dir = GlobalVars.nn_outputs.get("move_dir", Vector2.ZERO)
-	self.current_action = GlobalVars.nn_outputs.get("current_action", 0)
-	self.shot_angle = GlobalVars.nn_outputs.get("shot_angle", 0.0)
+	self.move_dir = Vector2(GlobalVars.nn_outputs["move_dir"][0], GlobalVars.nn_outputs["move_dir"][1])
+	self.current_action = attack_forced if force_attack_mode else int(GlobalVars.nn_outputs["current_action"])
+	self.shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
+	
+	_update_action(delta)
+	floating_movement.update(delta)
+
+func get_inputs() -> Array:
+	var near_bullet_pos = Vector2.ZERO
+	if is_instance_valid(near_bullet):
+		near_bullet_pos = near_bullet.global_position
+	return [
+		self.global_position.x / viewport_size.x,
+		self.global_position.y / viewport_size.y,
+		near_bullet_pos.x / viewport_size.x,
+		near_bullet_pos.y / viewport_size.y,
+		self.velocity.x / max_speed,
+		self.velocity.y / max_speed,
+		self.health / max_health,
+		self.damage / max_damage,
+	]
 
 func dead_if_can() -> void:
 	if health <= 0:
 		queue_free()
+	GlobalVars.boss = null
 
 func _get_near_player() -> PlayerController:
 	if GlobalVars.players.is_empty(): 
@@ -130,7 +139,7 @@ func can_shot() -> bool:
 # --- Lógica de Acciones -----
 # ----------------------------
 
-func update_action(delta) -> void:
+func _update_action(delta) -> void:
 	if boss_actions.has(current_action):
 		boss_actions[current_action].call(delta)
 
@@ -138,7 +147,12 @@ func _nothing_action(delta: float) -> void:
 	# El comportamiento pasivo puede incluir mirar al jugador más cercano si existe
 	if is_instance_valid(near_player):
 		Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
+		
+	damage += damage_increment # incrementa el daño al no atacar
 
 
 func _ball_attack_action(delta: float) -> void:
-	ball_attack.update(delta)
+	# Resetea el daño despues de acumularlo al no atacar
+	if damage > base_damage:
+		damage = base_damage
+	shot_attack.update(delta)

@@ -16,10 +16,8 @@ size = Vector2(847, 20)
 
 [node name="test" type="Node2D"]
 
-[node name="SimulationManager" parent="." instance=ExtResource("2_qbvmm")]
-
-[node name="SpawnPlayer1" parent="SimulationManager" index="0"]
-position = Vector2(189, 160)
+[node name="SimulationManager" parent="." node_paths=PackedStringArray("player_spawn_point") instance=ExtResource("2_qbvmm")]
+player_spawn_point = NodePath("SpawnPlayer")
 
 [node name="SpawnBoss" parent="SimulationManager" index="1"]
 position = Vector2(519, 113)

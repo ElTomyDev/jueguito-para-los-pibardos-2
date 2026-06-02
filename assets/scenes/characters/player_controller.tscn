@@ -5,7 +5,7 @@
 [ext_resource type="Script" uid="uid://ceo6x7mwr7ess" path="res://assets/scripts/characters/player/smooth_movement.gd" id="3_iy8qy"]
 [ext_resource type="Script" uid="uid://bmdulpsi3qw7d" path="res://assets/scripts/characters/player/controls.gd" id="4_n28hv"]
 [ext_resource type="Script" uid="uid://cqjn8cs6vpvfh" path="res://assets/scripts/characters/player/adjustable_jump.gd" id="5_xjp6k"]
-[ext_resource type="PackedScene" uid="uid://cra5e1yrb41sb" path="res://assets/scenes/attacks/gun/gun.tscn" id="6_8ckkg"]
+[ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/shot_attack.gd" id="6_btdcj"]
 [ext_resource type="Script" uid="uid://dv8tqb8qgxvle" path="res://assets/scripts/characters/damage_area.gd" id="7_btdcj"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vwu8u"]
@@ -39,7 +39,14 @@ jump_control = &"p_jump"
 [node name="AdjustableJump" type="Node2D" parent="PlayerMechanics"]
 script = ExtResource("5_xjp6k")
 
-[node name="Gun" parent="." instance=ExtResource("6_8ckkg")]
+[node name="Attacks" type="Node2D" parent="PlayerMechanics"]
+
+[node name="Shot" type="Node2D" parent="PlayerMechanics/Attacks"]
+script = ExtResource("6_btdcj")
+
+[node name="GunSprite" type="Sprite2D" parent="PlayerMechanics/Attacks/Shot"]
+
+[node name="ShotPoint" type="Node2D" parent="PlayerMechanics/Attacks/Shot"]
 
 [node name="DamageArea" type="Area2D" parent="." groups=["Players"]]
 collision_mask = 4

@@ -4,13 +4,12 @@
 [ext_resource type="PackedScene" uid="uid://cfwgy1ayuvs04" path="res://assets/scenes/characters/player_controller.tscn" id="2_465v1"]
 [ext_resource type="PackedScene" uid="uid://do24pdmmrhm74" path="res://assets/scenes/characters/boss_controller.tscn" id="3_inlq4"]
 
-[node name="SimulationManager" type="Node2D" node_paths=PackedStringArray("spawn_player_points", "boss_spawn")]
+[node name="SimulationManager" type="Node2D" node_paths=PackedStringArray("boss_spawn_point")]
 script = ExtResource("1_fdx1r")
-players = Array[PackedScene]([ExtResource("2_465v1")])
-spawn_player_points = [NodePath("SpawnPlayer1")]
-boss_spawn = NodePath("SpawnBoss")
+player = ExtResource("2_465v1")
 boss = ExtResource("3_inlq4")
+boss_spawn_point = NodePath("SpawnBoss")
 
-[node name="SpawnPlayer1" type="Node2D" parent="."]
+[node name="SpawnPlayer" type="Node2D" parent="."]
 
 [node name="SpawnBoss" type="Node2D" parent="."]
