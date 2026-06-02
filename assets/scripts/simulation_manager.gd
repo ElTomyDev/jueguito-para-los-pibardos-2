@@ -14,7 +14,7 @@ const REWARD_SURVIVE_STEP    : float =  0.001   # Por sobrevivir un paso
 const REWARD_WIN_EPISODE     : float = 50.0     # Por ganar la partida
 const REWARD_LOSE_EPISODE    : float = -50.0    # Por perden la partida
 const REWARD_DODGE_BULLET    : float = 0.0      # Por esquivar balas
-const REWARD_NEAR_BULLET     : float = 0.05     # Por disparar cerca del jugador
+const REWARD_NEAR_BULLET     : float = 0.5     # Por disparar cerca del jugador
 
 const PROXIMITY_MAX_RANGE    : float = 60.0     # Rango de recompensa para proximidad de bala
 

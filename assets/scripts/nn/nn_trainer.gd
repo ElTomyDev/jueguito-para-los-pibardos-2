@@ -11,6 +11,7 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	# Cálculo de la Ventaja (Temporal Difference Error)
 	var td_target: float = reward + (gamma * v_next)
 	var advantage: float = td_target - v_s
+	advantage = clamp(advantage, -10.0, 10.0)
 	
 	# ---------------------------------------------
 	# Backpropagation Manual de la cabeza del Critic

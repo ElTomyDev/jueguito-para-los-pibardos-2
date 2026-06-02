@@ -24,31 +24,49 @@ func save_network(nn: NeuralNetwork) -> void:
 
 func load_network(nn: NeuralNetwork) -> bool:
 	if not FileAccess.file_exists(SAVE_PATH):
-		print("[NNPersistence] No se encontró un cerebro previo. Usando pesos aleatorios.")
+		print("[NNPersistence] No se encontró cerebro previo. Usando pesos aleatorios.")
 		return false
 		
 	var file = FileAccess.open(SAVE_PATH, FileAccess.READ)
-	if file:
-		var json_string: String = file.get_as_text()
-		file.close()
+	if not file:
+		push_error("[NNPersistence] No se pudo abrir el archivo.")
+		return false
+
+	var json_string: String = file.get_as_text()
+	file.close()
+	
+	var json = JSON.new()
+	if json.parse(json_string) != OK:
+		push_error("[NNPersistence] Error al parsear JSON.")
+		return false
 		
-		var json = JSON.new()
-		var error = json.parse(json_string)
-		if error == OK:
-			var data = json.get_data()
-			# Verificación estricta de que el diccionario sea válido y contenga las claves de la red
-			if typeof(data) == TYPE_DICTIONARY and data.has("W1") and data.has("b1"):
-				nn.W1 = data["W1"]
-				nn.b1 = data["b1"]
-				nn.W_actor = data["W_actor"]
-				nn.b_actor = data["b_actor"]
-				nn.W_critic = data["W_critic"]
-				nn.b_critic = data["b_critic"]
-				print("[NNPersistence] Cerebro del jefe cargado de forma persistente.")
-				return true
-			else:
-				print("[NNPersistence] El JSON cargado no tiene la estructura correcta. Usando pesos aleatorios.")
-				return false
-			
-	push_error("[NNPersistence] Error crítico al parsear el archivo de guardado.")
+	var data = json.get_data()
+	if typeof(data) != TYPE_DICTIONARY or not data.has("W1") or not data.has("b1"):
+		print("[NNPersistence] Estructura inválida. Usando pesos aleatorios.")
+		return false
+	
+	# Validación de nan antes de cargar
+	if _matrix_has_nan(data["W1"]) or _array_has_nan(data["b1"]):
+		print("[NNPersistence] Cerebro corrupto (NaN detectado). Usando pesos aleatorios.")
+		return false
+	
+	nn.W1      = data["W1"]
+	nn.b1      = data["b1"]
+	nn.W_actor = data["W_actor"]
+	nn.b_actor = data["b_actor"]
+	nn.W_critic = data["W_critic"]
+	nn.b_critic = data["b_critic"]
+	print("[NNPersistence] Cerebro cargado correctamente.")
+	return true
+	
+func _matrix_has_nan(matrix: Array) -> bool:
+	for row in matrix:
+		if _array_has_nan(row):
+			return true
+	return false
+
+func _array_has_nan(arr: Array) -> bool:
+	for val in arr:
+		if typeof(val) == TYPE_FLOAT and is_nan(val):
+			return true
 	return false

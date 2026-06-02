@@ -38,9 +38,13 @@ func _relu(x: float) -> float:
 	return max(0.0, x)
 
 func _tanh(x: float) -> float:
-	return (exp(x) - exp(-x)) / (exp(x) + exp(-x))
+	x = clamp(x, -20.0, 20.0)
+	var ep = exp(x)
+	var en = exp(-x)
+	return (ep - en) / (ep + en)
 
 func _sigmoid(x: float) -> float:
+	x = clamp(x, -20.0, 20.0)
 	return 1.0 / (1.0 + exp(-x))
 
 # --- Forward Pass ---
