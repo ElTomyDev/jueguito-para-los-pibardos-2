@@ -35,7 +35,10 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	# Si estamos en medio de un reset, o las entidades aún no se registraron en el árbol, ignoramos el frame.
 	# Esto evita por completo el spawn múltiple e infinito de jefes.
-	if is_resetting or not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
+	if is_resetting:
+		return
+	 # Esperamos a que ambas entidades estén registradas antes de simular
+	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
 		return
 	if is_instance_valid(GlobalVars.boss):
 		last_boss_health = GlobalVars.boss.max_health # O 10000.0 directamente
@@ -210,6 +213,5 @@ func _spawn_entities() -> void:
 
 func _can_episode_end() -> bool:
 	# Validación de seguridad por si el Boss es nulo en el frame actual
-	is_instance_valid(GlobalVars.boss)
 	if not is_instance_valid(GlobalVars.boss): return true
 	return current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players.is_empty()
