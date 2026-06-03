@@ -1,7 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://b3fjumhorxnno"]
+[gd_scene load_steps=6 format=3 uid="uid://b3fjumhorxnno"]
 
 [ext_resource type="Script" uid="uid://cu3rrjy1r55o1" path="res://assets/scripts/ui/health_bar.gd" id="1_m6jmp"]
 [ext_resource type="Script" uid="uid://b3pqsq7nh6o3" path="res://assets/scripts/ui/train_data.gd" id="1_xxqyw"]
+[ext_resource type="Script" uid="uid://c4nm5g5opr2h2" path="res://assets/scripts/ui/distance_player_to_boss.gd" id="3_lte46"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_m6jmp"]
 line_spacing = 1.0
@@ -84,3 +85,17 @@ vertical_alignment = 1
 [node name="PlayerHealth" type="ProgressBar" parent="PlayerProgressBar"]
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
+
+[node name="DistancePlayerToBoss" type="Control" parent="."]
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("3_lte46")
+
+[node name="Label" type="Label" parent="DistancePlayerToBoss"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+vertical_alignment = 1

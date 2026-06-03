@@ -1,24 +1,29 @@
 extends Node2D
 
-# Episodio 119 con una recompensa entre 18.8 a 35.4
-
 var viewport_size: Vector2
 
-@export var player             : PackedScene
+@export var player              : PackedScene
 @export var boss                : PackedScene
-@export var player_spawn_point : Node2D
+@export var player_spawn_point  : Node2D
 @export var boss_spawn_point    : Node2D
+@export var random_spawns       : bool = true
 
 # Para recompensas y penalizaciones
-const REWARD_DAMAGE_DEALT    : float =  0.05    # Por dañar al jugador
-const REWARD_DAMAGE_RECIBE   : float = -0.05    # Por recibir daño
-const REWARD_SURVIVE_STEP    : float =  0.001   # Por sobrevivir un paso
-const REWARD_WIN_EPISODE     : float = 50.0     # Por ganar la partida
-const REWARD_LOSE_EPISODE    : float = -50.0    # Por perden la partida
-const REWARD_DODGE_BULLET    : float = 0.0      # Por esquivar balas
-const REWARD_NEAR_BULLET     : float = 0.5     # Por disparar cerca del jugador
+const REWARD_DAMAGE_DEALT    : float =  1.0      # Por dañar al jugador
+const REWARD_DAMAGE_RECIBE   : float = -0.01     # Por recibir daño
+const REWARD_SURVIVE_STEP    : float =  0.0      # Por sobrevivir un paso
+const REWARD_WIN_EPISODE     : float = 100.0     # Por ganar la partida
+const REWARD_LOSE_EPISODE    : float = -150.0    # Por perden la partida
+const REWARD_DODGE_BULLET    : float = 0.2       # Por esquivar balas
+const REWARD_NEAR_BULLET     : float = 0.8       # Por disparar cerca del jugador
+const REWARD_FAIL_BULLET     : float = -0.05     # Por fallar la bala
+const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Por matar rapido al jugador
+const REWARD_FAST_BOSS_DEAD  : float = -0.05     # Por matar morir rapido
+const REWARD_FOR_STATIC      : float = -0.005    # Por quedarse quieto
+const REWARD_NEAR_PLAYER     : float = 0.2       # Por acercarse al jugador
+const REWARD_GOD_AIM         : float = 0.1       # Por apuntar correctamente al jugador
 
-const PROXIMITY_MAX_RANGE    : float = 60.0     # Rango de recompensa para proximidad de bala
+const PROXIMITY_MAX_RANGE    : float = 100.0     # Rango de recompensa para proximidad de bala
 
 # ---------------
 #  Nodos de la NN
@@ -26,9 +31,10 @@ const PROXIMITY_MAX_RANGE    : float = 60.0     # Rango de recompensa para proxi
 var nn          : NeuralNetwork
 var trainer     : NNTrainer
 var persistence : NNPersistence
+var total_inputs: int = 14
 
 # Configuracion de pasos
-const MAX_STEPS_PER_EPISODE: int = 2500 # Maximos pasos posibles
+const MAX_STEPS_PER_EPISODE: int = 800 # Maximos pasos posibles
 var current_step: int = 0 # Paso actual
 var current_episode: int = 0
 
@@ -43,9 +49,10 @@ var last_player_health: float = 0.0
 var is_resetting: bool = false
 
 func _ready() -> void:
+	GlobalVars.MAX_STEP_FOR_EPISODE = MAX_STEPS_PER_EPISODE
+	GlobalVars.current_episode = current_episode
 	_init_nn_core()
 	_spawn_entities()
-	GlobalVars.current_episode = current_episode
 
 func _physics_process(_delta: float) -> void:
 	# Si estamos en medio de un reset, o las entidades aún no se registraron en el árbol, ignoramos el frame.
@@ -90,6 +97,10 @@ func _calculate_reward() -> float:
 	var reward: float = REWARD_SURVIVE_STEP
 	if not is_instance_valid(GlobalVars.boss): return reward
 	
+	# Castigo por quedarse quieto
+	if GlobalVars.boss.velocity == Vector2.ZERO:
+		reward += REWARD_FOR_STATIC
+	
 	# Recompensa por daño infligido al jugador
 	var current_player_health = GlobalVars.players[0].health
 	var damage_dealt = last_player_health - current_player_health
@@ -109,7 +120,7 @@ func _calculate_reward() -> float:
 		if dist > 150.0 and dist < 300.0:
 			reward += REWARD_DODGE_BULLET
 
-	# Por apuntar al jugador
+# Por la bala estar cerca del jugador
 	var bullets = GlobalVars.bullets
 	var p = GlobalVars.players[0] if GlobalVars.players.size() > 0 else null
 	if p and bullets.size() > 0:
@@ -118,8 +129,25 @@ func _calculate_reward() -> float:
 				var dist = b.global_position.distance_to(p.global_position)
 				if dist <= PROXIMITY_MAX_RANGE:
 					reward += REWARD_NEAR_BULLET * (1.0 - (dist / PROXIMITY_MAX_RANGE))
+				else: # Si la bala esta lejos
+					reward += REWARD_FAIL_BULLET
+	
+	# Recompensa por acercarse al jugador
+	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
+		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_player.global_position)
+		var max_dist = viewport_size.length()  # o un valor fijo como 1000
+		var closeness = 1.0 - clamp(dist / max_dist, 0.0, 1.0)
+		reward += REWARD_NEAR_PLAYER * closeness   # hasta +0.05 por estar muy cerca
+	
+	# Recompensa por apuntar hacia el jugador (incluso si no dispara)
+	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
+		var ideal_angle = (GlobalVars.boss.near_player.global_position - GlobalVars.boss.global_position).angle()
+		var angle_diff = abs(wrapf(ideal_angle - GlobalVars.boss.shot_angle, -PI, PI))
+		var aim_reward = REWARD_GOD_AIM * (1.0 - (angle_diff / PI))   # máximo +0.1
+		reward += aim_reward
 	
 	return reward
+	
 
 func _handle_episode_end() -> void:
 	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
@@ -132,9 +160,11 @@ func _handle_episode_end() -> void:
 	if not last_state_activation.is_empty():
 		var final_reward: float = 0.0
 		if GlobalVars.players.is_empty():
-			final_reward += REWARD_WIN_EPISODE # Premio gordo por matar al jugador
-		elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
-			final_reward += REWARD_LOSE_EPISODE # Castigo gordo por morir
+			final_reward += REWARD_WIN_EPISODE + (MAX_STEPS_PER_EPISODE - current_step) * REWARD_FAST_PLAYER_DEAD # Premio por matar al jugador
+		elif (is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0):
+			final_reward += REWARD_LOSE_EPISODE  + (MAX_STEPS_PER_EPISODE - current_step) * REWARD_FAST_BOSS_DEAD 
+		elif current_step >= MAX_STEPS_PER_EPISODE:
+			final_reward += REWARD_LOSE_EPISODE # Castigo por no matar a tiempo
 			
 		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
 	
@@ -172,7 +202,7 @@ func _reset_health_tracking() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for i in range(11): inputs.append(0.0)
+		for i in range(total_inputs): inputs.append(0.0)
 		return inputs
 	
 	if is_instance_valid(GlobalVars.boss):
@@ -180,11 +210,11 @@ func _get_inputs_for_nn() -> Array:
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())
 	
-	# Garantizar que siempre devuelva exactamente 11 elementos rellenando si falta algo
-	while inputs.size() < 11:
+	# Garantizar que siempre devuelva exactamente (total_inputs) elementos rellenando si falta algo
+	while inputs.size() < total_inputs:
 		inputs.append(0.0)
-	if inputs.size() > 11: # Si tiene mas de 11 elementos
-		inputs = inputs.slice(0, 11)
+	if inputs.size() > total_inputs: 
+		inputs = inputs.slice(0, total_inputs)
 	
 	return inputs
 
@@ -219,7 +249,7 @@ func _reset_episode() -> void:
 	# Elimina y resetea el boss.
 	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
 	GlobalVars.boss = null
-	
+	GlobalVars.shot_impact = Vector2.ZERO
 	_spawn_entities() # Agrega devuelta las entidades.
 
 func _init_nn_core() -> void:
@@ -234,9 +264,13 @@ func _init_nn_core() -> void:
 func _spawn_entities() -> void:
 	var player_instance = player.instantiate() as PlayerController
 	var boss_instance = boss.instantiate() as BossController
-	
-	player_instance.global_position = player_spawn_point.global_position
-	boss_instance.global_position = boss_spawn_point.global_position
+	viewport_size = get_viewport().get_visible_rect().size
+	if !random_spawns:
+		player_instance.global_position = player_spawn_point.global_position
+		boss_instance.global_position = boss_spawn_point.global_position
+	else:
+		player_instance.global_position = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
+		boss_instance.global_position = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
 	
 	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)
@@ -247,5 +281,7 @@ func _can_episode_end() -> bool:
 	# Validación de seguridad por si el Boss es nulo en el frame actual
 	if not is_instance_valid(GlobalVars.boss): 
 		return true
-	var result = current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players.is_empty()
+	if not is_instance_valid(GlobalVars.players[0]): 
+		return true
+	var result = current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players[0].health <= 0.0
 	return result

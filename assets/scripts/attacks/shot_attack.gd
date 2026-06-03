@@ -5,6 +5,7 @@ class_name  ShotAttack
 @export var bullet_speed: float = 500.0
 @export var bullet_life_time: float = 1.5
 @export var bullet_dispersion: float = 18.0
+@export var bullet_color: Color
 
 @export_category("Gun Settings")
 @export var gun_damage: float = 0.0
@@ -29,19 +30,17 @@ func setup(body: CharacterBody2D) -> void:
 func update(delta: float) -> void:
 	shot_if_can_and_update(delta)
 
-func _rotate(to:Vector2) -> void:
-	Utils.view_to(self.global_position, to, rotation_speed, self)
-
 func shot_if_can_and_update(delta: float) -> void:
 	if is_boss:
+		#var aim_point = character.global_position + Vector2(cos(character.shot_angle), sin(character.shot_angle)) * 200.0
+		#Utils.view_to(character.global_position, aim_point, rotation_speed, character)
 		fire_timer -= delta # Resta el tiempo para poder disparar
 		if fire_timer <= 0: # Si el tiempo para disparar llega a 0 o menos.
 			_shot()
 			fire_timer = character.fire_rate
 		return
 
-	
-	_rotate(get_global_mouse_position()) # Rota el arma hacia donde apunta el  mouse
+	Utils.view_to(self.global_position, get_global_mouse_position(), rotation_speed, self)
 	if Input.is_action_pressed("shot"): # Si presiona el mouse para disparar
 		fire_timer -= delta # Resta el tiempo para poder disparar
 	else: # Si lo suelta
@@ -69,6 +68,7 @@ func _set_bullet_values(bullet_instence: Bullet) -> void:
 	bullet_instence.damage = _get_total_bullet_damage()
 	bullet_instence.from_group = character.bullet_from_group
 	bullet_instence.group_target = character.bullet_to_group
+	bullet_instence.bullet_color = bullet_color
 	if is_boss:
 		bullet_instence.custom_dir = Vector2(cos(character.shot_angle), sin(character.shot_angle))
 

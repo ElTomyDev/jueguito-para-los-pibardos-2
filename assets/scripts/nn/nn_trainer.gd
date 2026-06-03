@@ -1,10 +1,11 @@
 extends RefCounted
 class_name NNTrainer
 
-var lr: float = 0.001          # Learning Rate
-var gamma: float = 0.99       # Factor de descuento para recompensas futuras
+var lr: float = 0.003          # Learning Rate (Inicia en 0.003 y baja a 0.001)
+var gamma: float = 0.99        # Factor de descuento para recompensas futuras
 
 func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictionary, reward: float, done: bool, action_taken: int) -> void:
+	_select_learning_rate()
 	var v_s: float = state_act["critic_value"]
 	var v_next: float = 0.0 if done else next_state_act["critic_value"]
 	
@@ -28,18 +29,17 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	# --------------------------------------------
 	var d_actor: Array = [0.0, 0.0, 0.0, 0.0]
 	
-	# Para salidas continuas: ajustamos la salida basándonos en el signo de la ventaja
+	# Para salidas continuas (move_x, move_y, shot_angle)
 	for i in range(3):
 		var tanh_grad: float = 1.0 - (state_act["actor_outputs"][i] * state_act["actor_outputs"][i])
-		# Si el movimiento o ángulo fue bueno (advantage > 0), reforzamos la dirección actual
+		# Gradiente para política determinística (DDPG-style)
 		d_actor[i] = -advantage * tanh_grad
 	
-	# Para la acción discreta (0 o 1)
-	var current_action_prob: float = state_act["actor_outputs"][3]
+	# Para la acción discreta (disparar) - CORREGIDO
+	var current_action_prob: float = state_act["actor_outputs"][3]  # salida sigmoide
 	var target_action: float = float(action_taken)
-	var action_error: float = current_action_prob - target_action
-	var sigmoid_grad: float = current_action_prob * (1.0 - current_action_prob)
-	d_actor[3] = action_error * sigmoid_grad * (-advantage)
+	# Gradiente correcto: -advantage * (target - prob)
+	d_actor[3] = -advantage * (target_action - current_action_prob)
 	
 	# Actualizar pesos Actor
 	for i in range(nn.actor_output_size):
@@ -62,3 +62,7 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 		for j in range(nn.input_size):
 			nn.W1[i][j] -= lr * d_h * state_act["inputs"][j]
 		nn.b1[i] -= lr * d_h
+
+func _select_learning_rate() -> void:
+	if GlobalVars.current_episode > 500 and lr > 0.001:
+		lr = 0.001

@@ -47,10 +47,12 @@ func _dead_if_can(delta: float) -> void:
 	life_time -= delta
 
 func _draw() -> void:
-	draw_line(Vector2.ZERO, Vector2(8,0), bullet_color, 3.5)
+	draw_line(Vector2.ZERO, Vector2(9,0), bullet_color, 4.0)
 
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group(group_target):
 		area.apply_damage(damage)
+		if from_group == "Boss":
+			GlobalVars.shot_impact = self.global_position
 		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
 		queue_free()

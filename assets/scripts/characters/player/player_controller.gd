@@ -61,7 +61,9 @@ func get_inputs() -> Array:
 	return [
 		health / max_health,
 		velocity.x / max_speed,
-		velocity.y / max_speed 
+		velocity.y / max_speed,
+		global_position.x / viewport_size.x,
+		global_position.y / viewport_size.y,
 	]
 
 func dead_if_can() -> void:

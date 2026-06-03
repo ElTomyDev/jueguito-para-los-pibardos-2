@@ -67,3 +67,4 @@ shot={
 textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(3.7230333e-05, 3.723038e-05, 3.7230366e-05, 1)

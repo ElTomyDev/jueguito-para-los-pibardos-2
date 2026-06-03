@@ -43,6 +43,7 @@ script = ExtResource("5_xjp6k")
 
 [node name="Shot" type="Node2D" parent="PlayerMechanics/Attacks"]
 script = ExtResource("6_btdcj")
+bullet_color = Color(0.09343637, 0.8876975, 0.43807188, 1)
 
 [node name="GunSprite" type="Sprite2D" parent="PlayerMechanics/Attacks/Shot"]
 
