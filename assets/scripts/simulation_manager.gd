@@ -31,7 +31,7 @@ const PROXIMITY_MAX_RANGE    : float = 100.0     # Rango de recompensa para prox
 var nn          : NeuralNetwork
 var trainer     : NNTrainer
 var persistence : NNPersistence
-var total_inputs: int = 14
+var total_inputs: int = 19
 
 # Configuracion de pasos
 const MAX_STEPS_PER_EPISODE: int = 800 # Maximos pasos posibles
@@ -88,7 +88,6 @@ func _physics_process(_delta: float) -> void:
 	# Guardar estado actual como referencia histórica para el próximo cuadro
 	last_state_activation = current_activation
 	last_action_taken = action_taken
-	
 	# 5. Comprobar condiciones de fin del episodio
 	if _can_episode_end():
 		_handle_episode_end()

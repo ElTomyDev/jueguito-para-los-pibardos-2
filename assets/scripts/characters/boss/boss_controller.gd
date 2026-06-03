@@ -82,6 +82,13 @@ func update_boss(delta) -> void:
 	if GlobalVars.nn_outputs.has("shot_angle"):
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
 	
+	# Agrega ruido
+	if GlobalVars.current_episode < 50:
+		move_dir += Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5))
+		move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
+		shot_angle += randf_range(-0.5, 0.5) * PI
+		shot_angle = clamp(shot_angle, -PI, PI)
+	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
 	
@@ -99,16 +106,37 @@ func get_inputs() -> Array:
 	var near_bullet_pos = Vector2.ZERO
 	if is_instance_valid(near_bullet):
 		near_bullet_pos = near_bullet.global_position
+	
+	var dist_to_player = 1.0
+	if near_player:
+		dist_to_player = global_position.distance_to(near_player.global_position) / viewport_size.length()
+	
+	var angle_to_player = 0.0
+	if near_player:
+		var to_player = (near_player.global_position - global_position).angle()
+		angle_to_player = abs(wrapf(to_player - shot_angle, -PI, PI)) / PI  # Normalizado [0,1]
+	
+	var rel_vel = Vector2.ZERO
+	if near_player:
+		rel_vel = near_player.velocity - velocity
+	
+	var last_shot_hit = 1.0 if GlobalVars.shot_impact != Vector2.ZERO else 0.0
+	
 	return [
-		self.global_position.x / viewport_size.x,
-		self.global_position.y / viewport_size.y,
-		near_bullet_pos.x / viewport_size.x,
-		near_bullet_pos.y / viewport_size.y,
-		GlobalVars.shot_impact.x / viewport_size.x,
-		GlobalVars.shot_impact.y / viewport_size.y,
-		self.velocity.x / max_speed,
-		self.velocity.y / max_speed,
-		self.health / max_health,
+		self.global_position.x / viewport_size.x, # Posicion del jefe en X
+		self.global_position.y / viewport_size.y, # Posicion del jefe en X
+		near_bullet_pos.x / viewport_size.x, # Posicion de la bala mar cercana en Y
+		near_bullet_pos.y / viewport_size.y, # Posicion de la bala mar cercana en Y
+		GlobalVars.shot_impact.x / viewport_size.x, # Ultimo impacto de bala en X
+		GlobalVars.shot_impact.y / viewport_size.y, # Ultimo impacto de bala en Y
+		self.velocity.x / max_speed, # Velocidad del jefe en X
+		self.velocity.y / max_speed, # Velocidad del jefe en Y
+		self.health / max_health, # Vida del jefe
+		clamp(dist_to_player, 0.0, 1.0), # Distancia al jugador mas cercano
+		angle_to_player, # Diferencia angular entre el jefe y el jugador
+		rel_vel.x / max_speed, # Velocidad relativa del jugador en X
+		rel_vel.y / max_speed,  # Velocidad relativa del jugador en Y
+		last_shot_hit, # 1 si la bala impacto 0 si no.
 	]
 
 func dead_if_can() -> void:
