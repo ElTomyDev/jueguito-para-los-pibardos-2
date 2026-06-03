@@ -16,7 +16,7 @@ const REWARD_WIN_EPISODE     : float = 100.0     # Por ganar la partida
 const REWARD_LOSE_EPISODE    : float = -150.0    # Por perden la partida
 const REWARD_DODGE_BULLET    : float = 0.2       # Por esquivar balas
 const REWARD_NEAR_BULLET     : float = 0.8       # Por disparar cerca del jugador
-const REWARD_FAIL_BULLET     : float = -0.05     # Por fallar la bala
+const REWARD_FAIL_BULLET     : float = -0.1     # Por fallar la bala
 const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Por matar rapido al jugador
 const REWARD_FAST_BOSS_DEAD  : float = -0.05     # Por matar morir rapido
 const REWARD_FOR_STATIC      : float = -0.005    # Por quedarse quieto
@@ -38,6 +38,10 @@ const MAX_STEPS_PER_EPISODE: int = 800 # Maximos pasos posibles
 var current_step: int = 0 # Paso actual
 var current_episode: int = 0
 
+var recent_rewards: Array = []   # guarda las últimas N recompensas
+const REWARD_WINDOW: int = 10
+var best_avg_reward: float = -1e9
+var best_avg_episode: int = 0
 var total_reward_step: float = 0.0
 
 # Variables para guardar el historial del último paso e iterar el algoritmo
@@ -145,8 +149,11 @@ func _calculate_reward() -> float:
 		var aim_reward = REWARD_GOD_AIM * (1.0 - (angle_diff / PI))   # máximo +0.1
 		reward += aim_reward
 	
-	return reward
+	if reward > 1e6 or reward < -1e6:
+		print("Reward fuera de rango: ", reward)
+		reward = clamp(reward, -1000.0, 1000.0)
 	
+	return reward
 
 func _handle_episode_end() -> void:
 	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
@@ -167,16 +174,9 @@ func _handle_episode_end() -> void:
 			
 		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
 	
-	# Guardar cerebro actualizado al disco de forma persistente
-	persistence.save_network(nn)
+	_check_and_save_best(total_reward_step, current_episode)
 	
-	# Reiniciar métricas de la simulación
 	print("Fin del Episodio: ", current_episode, " | Pasos totales: ", steps_saved, " | Recompensa Acumulada: ", total_reward_step)
-	total_reward_step = 0.0
-	last_state_activation.clear()
-	
-	current_episode += 1
-	GlobalVars.current_episode = current_episode
 	
 	_reset_episode()
 	_reset_health_tracking()
@@ -231,6 +231,30 @@ func _update_nn_outputs(output: Array) -> void:
 		GlobalVars.nn_outputs["shot_angle"] = output[2]
 		GlobalVars.nn_outputs["current_action"] = output[3]
 
+func _check_and_save_best(episode_reward: float, episode_number: int) -> void:
+	# Guardar siempre el último modelo 
+	persistence.save_network(nn, persistence.SAVE_PATH)
+	# Actualizar ventana
+	recent_rewards.append(episode_reward)
+	if recent_rewards.size() > REWARD_WINDOW:
+		recent_rewards.pop_front()
+	
+	# Calcular promedio
+	if recent_rewards.size() < REWARD_WINDOW:
+		return
+	
+	var avg_reward = 0.0
+	for r in recent_rewards:
+		avg_reward += r
+	avg_reward /= recent_rewards.size()
+	
+	# Comparar con mejor promedio
+	if avg_reward > best_avg_reward:
+		best_avg_reward = avg_reward
+		best_avg_episode = episode_number
+		persistence.save_network(nn, persistence.SAVE_PATH_BEST)
+		print("Nuevo mejor promedio (últimos ", REWARD_WINDOW, " episodios): ", best_avg_reward, " en episodio ", best_avg_episode)
+
 # --------
 # Utilidad
 # --------
@@ -238,17 +262,28 @@ func _reset_episode() -> void:
 	# Elimina y resetea las balas.
 	for bullet in GlobalVars.bullets:
 		if is_instance_valid(bullet): bullet.queue_free()
-	GlobalVars.bullets.clear()
 	
 	# Elimina y resetea los jugadores.
 	for p in GlobalVars.players:
 		if is_instance_valid(p): p.queue_free()
-	GlobalVars.players.clear()
 	
 	# Elimina y resetea el boss.
 	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
+	
+	total_reward_step = 0.0
+	last_state_activation.clear()
+	
+	current_episode += 1
+	GlobalVars.current_episode = current_episode
+	
 	GlobalVars.boss = null
+	GlobalVars.bullets.clear()
+	GlobalVars.players.clear()
 	GlobalVars.shot_impact = Vector2.ZERO
+	GlobalVars.current_step = 0
+	GlobalVars.current_reward = 0.0
+	
+	
 	_spawn_entities() # Agrega devuelta las entidades.
 
 func _init_nn_core() -> void:

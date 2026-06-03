@@ -32,7 +32,6 @@ func _draw() -> void:
 
 func _delete_all_shot_impacts() -> void:
 	if shot_point_labels.is_empty(): return
-	
 	if GlobalVars.current_step >= GlobalVars.MAX_STEP_FOR_EPISODE:
 		for label in shot_point_labels:
 			label.queue_free()

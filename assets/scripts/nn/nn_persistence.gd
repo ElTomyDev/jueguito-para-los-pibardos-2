@@ -2,8 +2,9 @@ extends RefCounted
 class_name NNPersistence
 
 const SAVE_PATH: String = "res://assets/train_data/boss_brain.json"
+const SAVE_PATH_BEST = "res://assets/train_data/boss_brain_best.json"
 
-func save_network(nn: NeuralNetwork) -> void:
+func save_network(nn: NeuralNetwork, path: String) -> void:
 	var data: Dictionary = {
 		"W1": nn.W1,
 		"b1": nn.b1,
@@ -13,14 +14,11 @@ func save_network(nn: NeuralNetwork) -> void:
 		"b_critic": nn.b_critic
 	}
 	
-	var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
-		var json_string: String = JSON.stringify(data)
-		file.store_string(json_string)
+		file.store_string(JSON.stringify(data))
 		file.close()
-		print("[NNPersistence] Cerebro del jefe guardado con éxito.")
-	else:
-		push_error("[NNPersistence] No se pudo abrir el archivo para guardar.")
+		print("[NNPersistence] Guardado en ", path)
 
 func load_network(nn: NeuralNetwork) -> bool:
 	if not FileAccess.file_exists(SAVE_PATH):
