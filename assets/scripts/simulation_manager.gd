@@ -6,23 +6,24 @@ var viewport_size: Vector2
 @export var boss                : PackedScene
 @export var player_spawn_point  : Node2D
 @export var boss_spawn_point    : Node2D
-@export var random_spawns       : bool = true
+@export var random_spawns       : bool = false
 @export var continue_training   : bool = true
 
 # Para recompensas y penalizaciones
-const REWARD_DAMAGE_DEALT    : float =  1.0      # Por dañar al jugador
+const REWARD_DAMAGE_DEALT    : float =  0.5      # Por dañar al jugador
 const REWARD_DAMAGE_RECIBE   : float = -0.01     # Por recibir daño
 const REWARD_SURVIVE_STEP    : float =  0.0      # Por sobrevivir un paso
-const REWARD_WIN_EPISODE     : float = 100.0     # Por ganar la partida
-const REWARD_LOSE_EPISODE    : float = -150.0    # Por perden la partida
+const REWARD_WIN_EPISODE     : float = 50.0      # Por ganar la partida
+const REWARD_LOSE_EPISODE    : float = -75.0     # Por perden la partida
 const REWARD_DODGE_BULLET    : float = 0.2       # Por esquivar balas
-const REWARD_NEAR_BULLET     : float = 0.8       # Por disparar cerca del jugador
-const REWARD_FAIL_BULLET     : float = -0.1      # Por fallar la bala
+const REWARD_NEAR_BULLET     : float = 0.5       # Por disparar cerca del jugador
+const REWARD_FAIL_BULLET     : float = -0.05     # Por fallar la bala
 const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Por matar rapido al jugador
 const REWARD_FAST_BOSS_DEAD  : float = -0.05     # Por matar morir rapido
-const REWARD_FOR_STATIC      : float = -0.01     # Por quedarse quieto
-const REWARD_NEAR_PLAYER     : float = 0.2       # Por acercarse al jugador
-const REWARD_GOD_AIM         : float = 0.1       # Por apuntar correctamente al jugador
+const REWARD_FOR_STATIC      : float = -0.1      # Por quedarse quieto
+const REWARD_NEAR_PLAYER     : float = 0.5       # Por acercarse al jugador
+const REWARD_GOD_AIM         : float = 0.3       # Por apuntar correctamente al jugador
+const REWARD_BAD_AIM         : float = -0.2      # Por apuntar incorrectamente al jugador
 
 const PROXIMITY_MAX_RANGE    : float = 130.0     # Rango de recompensa para proximidad de bala
 
@@ -39,20 +40,21 @@ var last_state_activation: Dictionary = {}
 var last_action_taken: int = 0
 var last_boss_health: float = 0.0
 var last_player_health: float = 0.0
+var last_angle_error: float = 0.0
 
 # ------------------
 #  Experience Replay
 # ------------------
 var replay_buffer: Array = []
 const BUFFER_SIZE: int = 5000
-const BATCH_SIZE: int = 16
+const BATCH_SIZE: int = 32
 var replay_step_counter: int = 0
-const REPLAY_TRAIN_FREQ: int = 10   # cada N pasos
+const REPLAY_TRAIN_FREQ: int = 2   # cada N pasos
 
 var is_resetting: bool = false
 
 func _ready() -> void:
-	Engine.time_scale = 2.0
+	#Engine.time_scale = 2.0
 	_load_last_training_data()
 	_init_nn_core()
 	_spawn_entities()
@@ -112,6 +114,7 @@ func _physics_process(_delta: float) -> void:
 	# Guardar estado actual como referencia histórica para el próximo cuadro
 	last_state_activation = _duplicate_activation(current_activation)
 	last_action_taken = action_taken
+	
 	# 5. Comprobar condiciones de fin del episodio
 	if _can_episode_end():
 		_handle_episode_end()
@@ -168,6 +171,15 @@ func _calculate_reward() -> float:
 		var angle_diff = abs(wrapf(ideal_angle - GlobalVars.boss.shot_angle, -PI, PI))
 		var aim_reward = REWARD_GOD_AIM * (1.0 - (angle_diff / PI))   # máximo +0.1
 		reward += aim_reward
+		# Penalización adicional si el error es grande (> 30 grados)
+		if angle_diff > PI/6:
+			reward += REWARD_BAD_AIM
+		# Recompensa por reducir el error angular (girar en la dirección correcta)
+		if last_angle_error > 0:
+			var error_reduction = last_angle_error - angle_diff
+			if error_reduction > 0:
+				reward += error_reduction * 0.5   # premia girar hacia el jugador
+		last_angle_error = angle_diff
 	
 	if reward > 1e6 or reward < -1e6:
 		print("Reward fuera de rango: ", reward)
@@ -300,6 +312,7 @@ func _reset_episode() -> void:
 	# Elimina y resetea las balas.
 	for bullet in GlobalVars.bullets:
 		if is_instance_valid(bullet): bullet.queue_free()
+		
 	
 	# Elimina y resetea los jugadores.
 	for p in GlobalVars.players:
@@ -309,6 +322,7 @@ func _reset_episode() -> void:
 	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
 	
 	last_state_activation.clear()
+	last_angle_error = 0.0
 	
 	GlobalVars.boss = null
 	GlobalVars.bullets.clear()
@@ -316,7 +330,6 @@ func _reset_episode() -> void:
 	GlobalVars.shot_impact = Vector2.ZERO
 	GlobalVars.current_step = 0
 	GlobalVars.current_reward = 0.0
-	
 	_spawn_entities() # Agrega devuelta las entidades.
 
 func _init_nn_core() -> void:

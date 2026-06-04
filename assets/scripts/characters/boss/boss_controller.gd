@@ -84,8 +84,9 @@ func update_boss(delta) -> void:
 	if move_dir.x != move_dir.x: move_dir.x = 0.0
 	if move_dir.y != move_dir.y: move_dir.y = 0.0
 	if shot_angle != shot_angle: shot_angle = 0.0
+	
 	# Agrega ruido
-	if GlobalVars.current_episode < 50:
+	if GlobalVars.current_episode < 200:
 		move_dir += Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5))
 		move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
 		shot_angle += randf_range(-0.5, 0.5) * PI
