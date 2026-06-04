@@ -17,14 +17,14 @@ const REWARD_WIN_EPISODE     : float = 100.0     # Por ganar la partida
 const REWARD_LOSE_EPISODE    : float = -150.0    # Por perden la partida
 const REWARD_DODGE_BULLET    : float = 0.2       # Por esquivar balas
 const REWARD_NEAR_BULLET     : float = 0.8       # Por disparar cerca del jugador
-const REWARD_FAIL_BULLET     : float = -0.1     # Por fallar la bala
+const REWARD_FAIL_BULLET     : float = -0.1      # Por fallar la bala
 const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Por matar rapido al jugador
 const REWARD_FAST_BOSS_DEAD  : float = -0.05     # Por matar morir rapido
-const REWARD_FOR_STATIC      : float = -0.005    # Por quedarse quieto
+const REWARD_FOR_STATIC      : float = -0.01     # Por quedarse quieto
 const REWARD_NEAR_PLAYER     : float = 0.2       # Por acercarse al jugador
 const REWARD_GOD_AIM         : float = 0.1       # Por apuntar correctamente al jugador
 
-const PROXIMITY_MAX_RANGE    : float = 100.0     # Rango de recompensa para proximidad de bala
+const PROXIMITY_MAX_RANGE    : float = 130.0     # Rango de recompensa para proximidad de bala
 
 # ---------------
 #  Nodos de la NN
@@ -40,9 +40,19 @@ var last_action_taken: int = 0
 var last_boss_health: float = 0.0
 var last_player_health: float = 0.0
 
+# ------------------
+#  Experience Replay
+# ------------------
+var replay_buffer: Array = []
+const BUFFER_SIZE: int = 5000
+const BATCH_SIZE: int = 16
+var replay_step_counter: int = 0
+const REPLAY_TRAIN_FREQ: int = 10   # cada N pasos
+
 var is_resetting: bool = false
 
 func _ready() -> void:
+	Engine.time_scale = 2.0
 	_load_last_training_data()
 	_init_nn_core()
 	_spawn_entities()
@@ -75,9 +85,32 @@ func _physics_process(_delta: float) -> void:
 	# 4. Entrenar usando el paso anterior completo (si existe)
 	if not last_state_activation.is_empty():
 		trainer.train_step(nn, last_state_activation, current_activation, reward, false, last_action_taken)
+	
+		# --- EXPERIENCE REPLAY: guardar transición en el buffer ---
+		var experience = {
+			"state": _duplicate_activation(last_state_activation),
+			"action": last_action_taken,
+			"reward": reward,
+			"next_state": _duplicate_activation(current_activation),
+			"done": false
+		}
+		replay_buffer.append(experience)
+		if replay_buffer.size() > BUFFER_SIZE:
+			replay_buffer.pop_front()
 		
+		# --- Entrenamiento con batch aleatorio del buffer ---
+		replay_step_counter += 1
+		if replay_step_counter >= REPLAY_TRAIN_FREQ and replay_buffer.size() >= BATCH_SIZE:
+			# Mezclar y tomar BATCH_SIZE muestras
+			replay_step_counter = 0
+			var batch = replay_buffer.duplicate()
+			batch.shuffle()
+			for i in range(BATCH_SIZE):
+				var exp = batch[i]
+				trainer.train_step(nn, exp.state, exp.next_state, exp.reward, exp.done, exp.action)
+	
 	# Guardar estado actual como referencia histórica para el próximo cuadro
-	last_state_activation = current_activation
+	last_state_activation = _duplicate_activation(current_activation)
 	last_action_taken = action_taken
 	# 5. Comprobar condiciones de fin del episodio
 	if _can_episode_end():
@@ -155,9 +188,27 @@ func _handle_episode_end() -> void:
 			final_reward += REWARD_LOSE_EPISODE  + (GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step) * REWARD_FAST_BOSS_DEAD 
 		elif GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE:
 			final_reward += REWARD_LOSE_EPISODE # Castigo por no matar a tiempo
-			
+		
+		
+		var final_exp = {
+			"state": _duplicate_activation(last_state_activation),
+			"action": last_action_taken,
+			"reward": final_reward,
+			"next_state": {},
+			"done": true
+		}
+		replay_buffer.append(final_exp)
+		if replay_buffer.size() > BUFFER_SIZE:
+			replay_buffer.pop_front()
+		
 		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
-	
+		if replay_buffer.size() >= BATCH_SIZE:
+			var batch = replay_buffer.duplicate()
+			batch.shuffle()
+			for i in range(BATCH_SIZE):
+				@warning_ignore("shadowed_global_identifier")
+				var exp = batch[i]
+				trainer.train_step(nn, exp.state, exp.next_state, exp.reward, exp.done, exp.action)
 	_check_and_save_best()
 	
 	print("Fin del Episodio: ", GlobalVars.current_episode, " | Pasos totales: ", GlobalVars.current_step, " | Recompensa Acumulada: ", GlobalVars.current_reward)
@@ -275,7 +326,8 @@ func _init_nn_core() -> void:
 	persistence = NNPersistence.new()
 	
 	# Intentar cargar pesos previos
-	persistence.load_network(nn, GlobalConst.SAVE_PATH_MODEL)
+	if continue_training:
+		persistence.load_network(nn, GlobalConst.SAVE_PATH_BEST_MODEL)
 
 func _spawn_entities() -> void:
 	var player_instance = player.instantiate() as PlayerController
@@ -318,3 +370,12 @@ func _save_best_train_data() -> void:
 		'best_avg_episode': GlobalVars.best_avg_episode
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)
+
+func _duplicate_activation(act: Dictionary) -> Dictionary:
+	var dup = {}
+	for key in act.keys():
+		if act[key] is Array:
+			dup[key] = act[key].duplicate()
+		else:
+			dup[key] = act[key]
+	return dup

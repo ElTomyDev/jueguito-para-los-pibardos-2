@@ -1,6 +1,6 @@
 extends Node
 
-const MAX_STEP_FOR_EPISODE: int = 800
+const MAX_STEP_FOR_EPISODE: int = 500
 
 const SAVE_PATH_MODEL: String = "res://assets/train_data/boss_brain.json"
 const SAVE_PATH_BEST_MODEL = "res://assets/train_data/boss_brain_best.json"
