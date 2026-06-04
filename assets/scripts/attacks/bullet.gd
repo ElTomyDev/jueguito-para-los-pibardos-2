@@ -42,8 +42,7 @@ func move_bullet(delta:float) -> void:
 
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:
-		queue_free()
-		GlobalVars.shot_impact = Vector2.ZERO
+		queue_free() 
 		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))
 	life_time -= delta
 

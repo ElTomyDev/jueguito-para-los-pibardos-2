@@ -1,11 +1,12 @@
 extends RefCounted
 class_name NNTrainer
 
-var lr: float = 0.003          # Learning Rate (Inicia en 0.003 y baja a 0.001)
+var lr: float = 0.001          # Learning Rate (Inicia en 0.003 y baja a 0.001)
 var gamma: float = 0.99        # Factor de descuento para recompensas futuras
 
+const MAX_GRAD = 1.0
+
 func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictionary, reward: float, done: bool, action_taken: int) -> void:
-	_select_learning_rate()
 	var v_s: float = state_act["critic_value"]
 	var v_next: float = 0.0 if done else next_state_act["critic_value"]
 	
@@ -40,6 +41,10 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	var target_action: float = float(action_taken)
 	# Gradiente correcto: -advantage * (target - prob)
 	d_actor[3] = -advantage * (target_action - current_action_prob)
+	
+	for i in range(d_actor.size()):
+		d_actor[i] = clamp(d_actor[i], -MAX_GRAD, MAX_GRAD)
+	d_critic = clamp(d_critic, -MAX_GRAD, MAX_GRAD)
 	
 	# Actualizar pesos Actor
 	for i in range(nn.actor_output_size):

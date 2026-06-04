@@ -1,7 +1,8 @@
-[gd_scene load_steps=6 format=3 uid="uid://b3fjumhorxnno"]
+[gd_scene load_steps=7 format=3 uid="uid://b3fjumhorxnno"]
 
 [ext_resource type="Script" uid="uid://cu3rrjy1r55o1" path="res://assets/scripts/ui/health_bar.gd" id="1_m6jmp"]
 [ext_resource type="Script" uid="uid://b3pqsq7nh6o3" path="res://assets/scripts/ui/train_data.gd" id="1_xxqyw"]
+[ext_resource type="Theme" uid="uid://bfkxyuwxfbngm" path="res://assets/themes/label_train_data_theme.tres" id="2_36ew0"]
 [ext_resource type="Script" uid="uid://c4nm5g5opr2h2" path="res://assets/scripts/ui/distance_player_to_boss.gd" id="3_lte46"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_m6jmp"]
@@ -29,12 +30,27 @@ offset_bottom = 40.0
 
 [node name="EpisodeLabel" type="Label" parent="Labels"]
 layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="BestEpisodeLabel" type="Label" parent="Labels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
 
 [node name="StepLabel" type="Label" parent="Labels"]
 layout_mode = 2
+theme = ExtResource("2_36ew0")
 
 [node name="RewardLabel" type="Label" parent="Labels"]
 layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="BestAvgRewardLabel" type="Label" parent="Labels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="LastShotImpactLabel" type="Label" parent="Labels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
 
 [node name="BossProgressBar" type="VBoxContainer" parent="." node_paths=PackedStringArray("health_bar")]
 layout_mode = 1

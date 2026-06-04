@@ -17,8 +17,10 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+ExternalFileManager="*res://assets/scripts/globals/external_file_manager.gd"
 Utils="*res://assets/scripts/globals/utils.gd"
 GlobalVars="*res://assets/scripts/globals/global_vars.gd"
+GlobalConst="*res://assets/scripts/globals/global_const.gd"
 
 [display]
 

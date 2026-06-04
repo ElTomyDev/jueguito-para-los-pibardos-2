@@ -81,7 +81,9 @@ func update_boss(delta) -> void:
 		current_action = int(GlobalVars.nn_outputs["current_action"]) if not force_attack_mode else attack_forced
 	if GlobalVars.nn_outputs.has("shot_angle"):
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
-	
+	if move_dir.x != move_dir.x: move_dir.x = 0.0
+	if move_dir.y != move_dir.y: move_dir.y = 0.0
+	if shot_angle != shot_angle: shot_angle = 0.0
 	# Agrega ruido
 	if GlobalVars.current_episode < 50:
 		move_dir += Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5))
@@ -119,8 +121,6 @@ func get_inputs() -> Array:
 	if near_player:
 		rel_vel = near_player.velocity - velocity
 	
-	var last_shot_hit = 1.0 if GlobalVars.shot_impact != Vector2.ZERO else 0.0
-	
 	return [
 		self.global_position.x / viewport_size.x, # Posicion del jefe en X
 		self.global_position.y / viewport_size.y, # Posicion del jefe en X
@@ -135,7 +135,6 @@ func get_inputs() -> Array:
 		angle_to_player, # Diferencia angular entre el jefe y el jugador
 		rel_vel.x / max_speed, # Velocidad relativa del jugador en X
 		rel_vel.y / max_speed,  # Velocidad relativa del jugador en Y
-		last_shot_hit, # 1 si la bala impacto 0 si no.
 	]
 
 func dead_if_can() -> void:

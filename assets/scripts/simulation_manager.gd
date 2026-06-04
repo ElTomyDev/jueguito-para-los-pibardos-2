@@ -7,6 +7,7 @@ var viewport_size: Vector2
 @export var player_spawn_point  : Node2D
 @export var boss_spawn_point    : Node2D
 @export var random_spawns       : bool = true
+@export var continue_training   : bool = true
 
 # Para recompensas y penalizaciones
 const REWARD_DAMAGE_DEALT    : float =  1.0      # Por dañar al jugador
@@ -31,18 +32,7 @@ const PROXIMITY_MAX_RANGE    : float = 100.0     # Rango de recompensa para prox
 var nn          : NeuralNetwork
 var trainer     : NNTrainer
 var persistence : NNPersistence
-var total_inputs: int = 19
-
-# Configuracion de pasos
-const MAX_STEPS_PER_EPISODE: int = 800 # Maximos pasos posibles
-var current_step: int = 0 # Paso actual
-var current_episode: int = 0
-
-var recent_rewards: Array = []   # guarda las últimas N recompensas
-const REWARD_WINDOW: int = 10
-var best_avg_reward: float = -1e9
-var best_avg_episode: int = 0
-var total_reward_step: float = 0.0
+var total_inputs: int = 18
 
 # Variables para guardar el historial del último paso e iterar el algoritmo
 var last_state_activation: Dictionary = {}
@@ -53,8 +43,7 @@ var last_player_health: float = 0.0
 var is_resetting: bool = false
 
 func _ready() -> void:
-	GlobalVars.MAX_STEP_FOR_EPISODE = MAX_STEPS_PER_EPISODE
-	GlobalVars.current_episode = current_episode
+	_load_last_training_data()
 	_init_nn_core()
 	_spawn_entities()
 
@@ -67,8 +56,7 @@ func _physics_process(_delta: float) -> void:
 	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
 		return
 	
-	current_step += 1
-	GlobalVars.current_step = current_step
+	GlobalVars.current_step += 1
 	
 	# 1. Obtener entradas y ejecutar Forward Pass
 	var current_inputs: Array = _get_inputs_for_nn()
@@ -82,8 +70,7 @@ func _physics_process(_delta: float) -> void:
 	
 	# 3. Calcular la recompensa del paso actual de entrenamiento
 	var reward: float = _calculate_reward()
-	total_reward_step += reward
-	GlobalVars.current_reward = total_reward_step
+	GlobalVars.current_reward += reward
 	
 	# 4. Entrenar usando el paso anterior completo (si existe)
 	if not last_state_activation.is_empty():
@@ -159,24 +146,23 @@ func _handle_episode_end() -> void:
 	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
 	is_resetting = true
 	
-	# Guardamos de forma segura las variables para el reporte antes de limpiarlas
-	var steps_saved: int = current_step
-	
 	# Ejecutar un último paso final de entrenamiento avisando que done = true
 	if not last_state_activation.is_empty():
 		var final_reward: float = 0.0
 		if GlobalVars.players.is_empty():
-			final_reward += REWARD_WIN_EPISODE + (MAX_STEPS_PER_EPISODE - current_step) * REWARD_FAST_PLAYER_DEAD # Premio por matar al jugador
+			final_reward += REWARD_WIN_EPISODE + (GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step) * REWARD_FAST_PLAYER_DEAD # Premio por matar al jugador
 		elif (is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0):
-			final_reward += REWARD_LOSE_EPISODE  + (MAX_STEPS_PER_EPISODE - current_step) * REWARD_FAST_BOSS_DEAD 
-		elif current_step >= MAX_STEPS_PER_EPISODE:
+			final_reward += REWARD_LOSE_EPISODE  + (GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step) * REWARD_FAST_BOSS_DEAD 
+		elif GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE:
 			final_reward += REWARD_LOSE_EPISODE # Castigo por no matar a tiempo
 			
 		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
 	
-	_check_and_save_best(total_reward_step, current_episode)
+	_check_and_save_best()
 	
-	print("Fin del Episodio: ", current_episode, " | Pasos totales: ", steps_saved, " | Recompensa Acumulada: ", total_reward_step)
+	print("Fin del Episodio: ", GlobalVars.current_episode, " | Pasos totales: ", GlobalVars.current_step, " | Recompensa Acumulada: ", GlobalVars.current_reward)
+	
+	GlobalVars.current_episode += 1
 	
 	_reset_episode()
 	_reset_health_tracking()
@@ -231,29 +217,30 @@ func _update_nn_outputs(output: Array) -> void:
 		GlobalVars.nn_outputs["shot_angle"] = output[2]
 		GlobalVars.nn_outputs["current_action"] = output[3]
 
-func _check_and_save_best(episode_reward: float, episode_number: int) -> void:
+func _check_and_save_best() -> void:
 	# Guardar siempre el último modelo 
-	persistence.save_network(nn, persistence.SAVE_PATH)
+	persistence.save_network(nn, GlobalConst.SAVE_PATH_MODEL)
 	# Actualizar ventana
-	recent_rewards.append(episode_reward)
-	if recent_rewards.size() > REWARD_WINDOW:
-		recent_rewards.pop_front()
+	GlobalVars.recent_rewards.append(GlobalVars.current_reward)
+	if GlobalVars.recent_rewards.size() > GlobalConst.REWARD_WINDOW:
+		GlobalVars.recent_rewards.pop_front()
 	
-	# Calcular promedio
-	if recent_rewards.size() < REWARD_WINDOW:
+	if GlobalVars.recent_rewards.size() < GlobalConst.REWARD_WINDOW:
 		return
 	
+	# Calcular promedio
 	var avg_reward = 0.0
-	for r in recent_rewards:
+	for r in GlobalVars.recent_rewards:
 		avg_reward += r
-	avg_reward /= recent_rewards.size()
+	avg_reward /= GlobalVars.recent_rewards.size()
 	
 	# Comparar con mejor promedio
-	if avg_reward > best_avg_reward:
-		best_avg_reward = avg_reward
-		best_avg_episode = episode_number
-		persistence.save_network(nn, persistence.SAVE_PATH_BEST)
-		print("Nuevo mejor promedio (últimos ", REWARD_WINDOW, " episodios): ", best_avg_reward, " en episodio ", best_avg_episode)
+	if avg_reward > GlobalVars.best_avg_reward:
+		GlobalVars.best_avg_reward = avg_reward
+		GlobalVars.best_avg_episode = GlobalVars.current_episode
+		persistence.save_network(nn, GlobalConst.SAVE_PATH_BEST_MODEL)
+		_save_best_train_data()
+		print("Nuevo mejor promedio (últimos ", GlobalConst.REWARD_WINDOW, " episodios): ", GlobalVars.best_avg_reward, " en episodio ", GlobalVars.best_avg_episode)
 
 # --------
 # Utilidad
@@ -270,11 +257,7 @@ func _reset_episode() -> void:
 	# Elimina y resetea el boss.
 	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
 	
-	total_reward_step = 0.0
 	last_state_activation.clear()
-	
-	current_episode += 1
-	GlobalVars.current_episode = current_episode
 	
 	GlobalVars.boss = null
 	GlobalVars.bullets.clear()
@@ -282,7 +265,6 @@ func _reset_episode() -> void:
 	GlobalVars.shot_impact = Vector2.ZERO
 	GlobalVars.current_step = 0
 	GlobalVars.current_reward = 0.0
-	
 	
 	_spawn_entities() # Agrega devuelta las entidades.
 
@@ -293,7 +275,7 @@ func _init_nn_core() -> void:
 	persistence = NNPersistence.new()
 	
 	# Intentar cargar pesos previos
-	persistence.load_network(nn)
+	persistence.load_network(nn, GlobalConst.SAVE_PATH_MODEL)
 
 func _spawn_entities() -> void:
 	var player_instance = player.instantiate() as PlayerController
@@ -308,8 +290,6 @@ func _spawn_entities() -> void:
 	
 	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)
-	
-	current_step = 0
 
 func _can_episode_end() -> bool:
 	# Validación de seguridad por si el Boss es nulo en el frame actual
@@ -317,5 +297,24 @@ func _can_episode_end() -> bool:
 		return true
 	if not is_instance_valid(GlobalVars.players[0]): 
 		return true
-	var result = current_step >= MAX_STEPS_PER_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players[0].health <= 0.0
+	var result = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players[0].health <= 0.0
 	return result
+
+func _load_last_training_data() -> void:
+	if continue_training:
+		var data = ExternalFileManager.read_json(GlobalConst.BEST_TRAIN_DATA_PATH)
+		if data.is_empty(): 
+			print("No hay informacion para cargar en el archivo:", GlobalConst.BEST_TRAIN_DATA_PATH)
+			return
+		
+		GlobalVars.current_episode = data['last_episode']
+		GlobalVars.best_avg_reward = data['best_avg_reward']
+		GlobalVars.best_avg_episode = data['best_avg_episode']
+
+func _save_best_train_data() -> void:
+	var data: Dictionary = {
+		'last_episode': GlobalVars.current_episode,
+		'best_avg_reward': GlobalVars.best_avg_reward,
+		'best_avg_episode': GlobalVars.best_avg_episode
+	}
+	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)

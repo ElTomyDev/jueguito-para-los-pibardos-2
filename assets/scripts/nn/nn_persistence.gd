@@ -1,9 +1,6 @@
 extends RefCounted
 class_name NNPersistence
 
-const SAVE_PATH: String = "res://assets/train_data/boss_brain.json"
-const SAVE_PATH_BEST = "res://assets/train_data/boss_brain_best.json"
-
 func save_network(nn: NeuralNetwork, path: String) -> void:
 	var data: Dictionary = {
 		"W1": nn.W1,
@@ -13,32 +10,11 @@ func save_network(nn: NeuralNetwork, path: String) -> void:
 		"W_critic": nn.W_critic,
 		"b_critic": nn.b_critic
 	}
-	
-	var file = FileAccess.open(path, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(data))
-		file.close()
-		print("[NNPersistence] Guardado en ", path)
+	ExternalFileManager.save_data(data, path)
 
-func load_network(nn: NeuralNetwork) -> bool:
-	if not FileAccess.file_exists(SAVE_PATH):
-		print("[NNPersistence] No se encontró cerebro previo. Usando pesos aleatorios.")
-		return false
-		
-	var file = FileAccess.open(SAVE_PATH, FileAccess.READ)
-	if not file:
-		push_error("[NNPersistence] No se pudo abrir el archivo.")
-		return false
-
-	var json_string: String = file.get_as_text()
-	file.close()
+func load_network(nn: NeuralNetwork, path: String) -> bool:
 	
-	var json = JSON.new()
-	if json.parse(json_string) != OK:
-		push_error("[NNPersistence] Error al parsear JSON.")
-		return false
-		
-	var data = json.get_data()
+	var data = ExternalFileManager.read_json(path)
 	if typeof(data) != TYPE_DICTIONARY or not data.has("W1") or not data.has("b1"):
 		print("[NNPersistence] Estructura inválida. Usando pesos aleatorios.")
 		return false
