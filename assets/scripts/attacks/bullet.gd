@@ -52,7 +52,9 @@ func _draw() -> void:
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group(group_target):
 		area.apply_damage(damage)
-		if from_group == "Boss":
+		if from_group == "Boss" and area.character:
+			GlobalVars.shot_impact = area.character.global_position
+		elif from_group == "Boss":
 			GlobalVars.shot_impact = self.global_position
 		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
 		queue_free()

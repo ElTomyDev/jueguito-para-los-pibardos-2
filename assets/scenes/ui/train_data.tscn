@@ -52,6 +52,14 @@ theme = ExtResource("2_36ew0")
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
+[node name="PlayerPosLabel" type="Label" parent="Labels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="BossPosLabel" type="Label" parent="Labels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
 [node name="BossProgressBar" type="VBoxContainer" parent="." node_paths=PackedStringArray("health_bar")]
 layout_mode = 1
 anchors_preset = 5
