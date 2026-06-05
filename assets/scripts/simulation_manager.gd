@@ -7,23 +7,33 @@ var viewport_size: Vector2
 @export var player_spawn_point  : Node2D
 @export var boss_spawn_point    : Node2D
 @export var random_spawns       : bool = false
-@export var continue_training   : bool = true
+@export var load_best_model     : bool = false
+@export var is_new_train        : bool = false
 
-# Para recompensas y penalizaciones
-const REWARD_DAMAGE_DEALT    : float =  0.5      # Por dañar al jugador
-const REWARD_DAMAGE_RECIBE   : float = -0.01     # Por recibir daño
-const REWARD_SURVIVE_STEP    : float =  0.0      # Por sobrevivir un paso
-const REWARD_WIN_EPISODE     : float = 50.0      # Por ganar la partida
-const REWARD_LOSE_EPISODE    : float = -75.0     # Por perden la partida
-const REWARD_DODGE_BULLET    : float = 0.2       # Por esquivar balas
-const REWARD_NEAR_BULLET     : float = 0.5       # Por disparar cerca del jugador
-const REWARD_FAIL_BULLET     : float = -0.05     # Por fallar la bala
-const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Por matar rapido al jugador
-const REWARD_FAST_BOSS_DEAD  : float = -0.05     # Por matar morir rapido
-const REWARD_FOR_STATIC      : float = -0.1      # Por quedarse quieto
-const REWARD_NEAR_PLAYER     : float = 0.5       # Por acercarse al jugador
-const REWARD_GOD_AIM         : float = 0.3       # Por apuntar correctamente al jugador
-const REWARD_BAD_AIM         : float = -0.2      # Por apuntar incorrectamente al jugador
+# Recompensas principales
+const REWARD_DAMAGE_DEALT    : float =  1.0      # Por dañar al jugador (fuerte)
+const REWARD_DAMAGE_RECIBE   : float = -0.3      # Por recibir daño (castigo moderado)
+const REWARD_WIN_EPISODE     : float = 100.0     # Victoria (alta)
+const REWARD_LOSE_EPISODE    : float = -100.0    # Derrota (fuerte castigo)
+const REWARD_SURVIVE_STEP    : float =  0.0      # Paso a paso neutro
+
+# Movimiento y posicionamiento
+const REWARD_NEAR_PLAYER     : float = 0.3       # Por estar cerca del jugador
+const REWARD_FOR_STATIC      : float = -0.2      # Evitar quedarse quieto
+const REWARD_DODGE_BULLET    : float = 0.3       # Esquivar balas enemigas
+
+# Disparo y puntería
+const REWARD_GOD_AIM         : float = 0.5       # Apuntar bien
+const REWARD_BAD_AIM         : float = -0.2      # Apuntar mal (error >30°)
+const REWARD_NEAR_BULLET     : float = 0.3       # Bala pasa cerca del jugador
+const REWARD_FAIL_BULLET     : float = -0.1      # Bala lejos del jugador
+
+# Acción de disparar (decision de atacar)
+const REWARD_SHOOT_ACTION    : float = 0.05      # Pequeño bono por decidir disparar (evita que nunca dispare)
+
+# Velocidad de victoria/derrota
+const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Bono por matar rápido
+const REWARD_FAST_BOSS_DEAD  : float = -0.1      # Penalización por morir rápido
 
 const PROXIMITY_MAX_RANGE    : float = 130.0     # Rango de recompensa para proximidad de bala
 
@@ -47,15 +57,15 @@ var last_angle_error: float = 0.0
 # ------------------
 var replay_buffer: Array = []
 const BUFFER_SIZE: int = 5000
-const BATCH_SIZE: int = 32
+const BATCH_SIZE: int = 8
 var replay_step_counter: int = 0
-const REPLAY_TRAIN_FREQ: int = 2   # cada N pasos
+const REPLAY_TRAIN_FREQ: int = 3   # cada N pasos
 
 var is_resetting: bool = false
 
 func _ready() -> void:
-	#Engine.time_scale = 2.0
-	_load_last_training_data()
+	Engine.time_scale = 2.0
+	_load_train_data()
 	_init_nn_core()
 	_spawn_entities()
 
@@ -108,8 +118,8 @@ func _physics_process(_delta: float) -> void:
 			var batch = replay_buffer.duplicate()
 			batch.shuffle()
 			for i in range(BATCH_SIZE):
-				var exp = batch[i]
-				trainer.train_step(nn, exp.state, exp.next_state, exp.reward, exp.done, exp.action)
+				var xp = batch[i]
+				trainer.train_step(nn, xp.state, xp.next_state, xp.reward, xp.done, xp.action)
 	
 	# Guardar estado actual como referencia histórica para el próximo cuadro
 	last_state_activation = _duplicate_activation(current_activation)
@@ -122,6 +132,9 @@ func _physics_process(_delta: float) -> void:
 func _calculate_reward() -> float:
 	var reward: float = REWARD_SURVIVE_STEP
 	if not is_instance_valid(GlobalVars.boss): return reward
+	
+	# Si decide disparar
+	reward += REWARD_SHOOT_ACTION
 	
 	# Castigo por quedarse quieto
 	if GlobalVars.boss.velocity == Vector2.ZERO:
@@ -221,11 +234,14 @@ func _handle_episode_end() -> void:
 				@warning_ignore("shadowed_global_identifier")
 				var exp = batch[i]
 				trainer.train_step(nn, exp.state, exp.next_state, exp.reward, exp.done, exp.action)
-	_check_and_save_best()
 	
-	print("Fin del Episodio: ", GlobalVars.current_episode, " | Pasos totales: ", GlobalVars.current_step, " | Recompensa Acumulada: ", GlobalVars.current_reward)
+	print("Fin del Episodio: ", GlobalVars.current_episode, " | Recompensa Acumulada: ", GlobalVars.current_reward)
+	
+	_check_and_save_best()
+	_save_train_data()
 	
 	GlobalVars.current_episode += 1
+	
 	
 	_reset_episode()
 	_reset_health_tracking()
@@ -282,7 +298,7 @@ func _update_nn_outputs(output: Array) -> void:
 
 func _check_and_save_best() -> void:
 	# Guardar siempre el último modelo 
-	persistence.save_network(nn, GlobalConst.SAVE_PATH_MODEL)
+	persistence.save_network(nn, GlobalConst.SAVE_MODEL_PATH)
 	# Actualizar ventana
 	GlobalVars.recent_rewards.append(GlobalVars.current_reward)
 	if GlobalVars.recent_rewards.size() > GlobalConst.REWARD_WINDOW:
@@ -301,9 +317,9 @@ func _check_and_save_best() -> void:
 	if avg_reward > GlobalVars.best_avg_reward:
 		GlobalVars.best_avg_reward = avg_reward
 		GlobalVars.best_avg_episode = GlobalVars.current_episode
-		persistence.save_network(nn, GlobalConst.SAVE_PATH_BEST_MODEL)
-		_save_best_train_data()
+		persistence.save_network(nn, GlobalConst.SAVE_BEST_MODEL_PATH)
 		print("Nuevo mejor promedio (últimos ", GlobalConst.REWARD_WINDOW, " episodios): ", GlobalVars.best_avg_reward, " en episodio ", GlobalVars.best_avg_episode)
+	
 
 # --------
 # Utilidad
@@ -339,8 +355,10 @@ func _init_nn_core() -> void:
 	persistence = NNPersistence.new()
 	
 	# Intentar cargar pesos previos
-	if continue_training:
-		persistence.load_network(nn, GlobalConst.SAVE_PATH_BEST_MODEL)
+	if load_best_model:
+		persistence.load_network(nn, GlobalConst.SAVE_BEST_MODEL_PATH)
+	else:
+		persistence.load_network(nn, GlobalConst.SAVE_MODEL_PATH)
 
 func _spawn_entities() -> void:
 	var player_instance = player.instantiate() as PlayerController
@@ -365,20 +383,20 @@ func _can_episode_end() -> bool:
 	var result = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players[0].health <= 0.0
 	return result
 
-func _load_last_training_data() -> void:
-	if continue_training:
+func _load_train_data() -> void:
+	if not is_new_train:
 		var data = ExternalFileManager.read_json(GlobalConst.BEST_TRAIN_DATA_PATH)
 		if data.is_empty(): 
 			print("No hay informacion para cargar en el archivo:", GlobalConst.BEST_TRAIN_DATA_PATH)
 			return
 		
-		GlobalVars.current_episode = data['last_episode']
+		GlobalVars.current_episode = data['episode']
 		GlobalVars.best_avg_reward = data['best_avg_reward']
 		GlobalVars.best_avg_episode = data['best_avg_episode']
 
-func _save_best_train_data() -> void:
+func _save_train_data() -> void:
 	var data: Dictionary = {
-		'last_episode': GlobalVars.current_episode,
+		'episode': GlobalVars.current_episode,
 		'best_avg_reward': GlobalVars.best_avg_reward,
 		'best_avg_episode': GlobalVars.best_avg_episode
 	}
@@ -392,3 +410,8 @@ func _duplicate_activation(act: Dictionary) -> Dictionary:
 		else:
 			dup[key] = act[key]
 	return dup
+
+func _save_rewards_json() -> void:
+	var data = {}
+	
+	ExternalFileManager.save_data(data, GlobalConst.REWARD_CSV_PATH)

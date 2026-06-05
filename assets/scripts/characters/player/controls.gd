@@ -21,6 +21,7 @@ func update_horizontal_directions() -> void:
 		#  1 para la derecha
 		#  0 para estar quieto
 		# -1 para la izquierda
+	@warning_ignore("narrowing_conversion")
 	player.dir_hor = Input.get_action_strength(right_control) - Input.get_action_strength(left_control)
 
 func input_jump_just_pressed() -> bool:

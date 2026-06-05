@@ -1,6 +1,7 @@
 extends Control
 
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
 		var dist_to_player = 1.0

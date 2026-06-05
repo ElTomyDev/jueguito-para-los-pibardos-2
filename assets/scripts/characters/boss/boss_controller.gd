@@ -16,10 +16,8 @@ var viewport_size: Vector2
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
-@export var force_attack_mode: bool = true
+@export var force_attack_mode: bool = false
 @export var attack_forced: int = 1
-@export var rotation_speed: float = 15.0
-@export var fire_rate: float = 0.3
 
 @export_category("Movement Parameters")
 @export var max_speed: float = 150.0
@@ -72,31 +70,26 @@ func init_boss() -> void:
 	GlobalVars.boss = self
 
 func update_boss(delta) -> void:
-	# Actualiza valores en base al output de la red.
+	# Actualiza la direccion de movimiento
 	if GlobalVars.nn_outputs.has("move_dir"):
 		var raw_dir = GlobalVars.nn_outputs["move_dir"]
+		# Si el output de la red cumple con el esperado
 		if typeof(raw_dir) == TYPE_ARRAY and raw_dir.size() >= 2:
 			move_dir = Vector2(raw_dir[0], raw_dir[1])
+	
+	# Actualiza la accion a realizar
 	if GlobalVars.nn_outputs.has("current_action"):
 		current_action = int(GlobalVars.nn_outputs["current_action"]) if not force_attack_mode else attack_forced
+	
+	# Actualiza el angulo de disparo
 	if GlobalVars.nn_outputs.has("shot_angle"):
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
-	if move_dir.x != move_dir.x: move_dir.x = 0.0
-	if move_dir.y != move_dir.y: move_dir.y = 0.0
-	if shot_angle != shot_angle: shot_angle = 0.0
 	
-	# Agrega ruido
-	if GlobalVars.current_episode < 200:
-		move_dir += Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5))
-		move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
-		shot_angle += randf_range(-0.5, 0.5) * PI
-		shot_angle = clamp(shot_angle, -PI, PI)
+	_add_boss_noise()
 	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
 	
-	if is_instance_valid(floating_movement):
-		floating_movement.update(delta)
 	_update_action(delta)
 	move_and_slide()
 	
@@ -183,14 +176,17 @@ func can_shot() -> bool:
 # ----------------------------
 
 func _update_action(delta) -> void:
+	if is_instance_valid(floating_movement):
+		floating_movement.update(delta)
+		
 	if boss_actions.has(current_action):
 		boss_actions[current_action].call(delta)
 
 @warning_ignore("unused_parameter")
 func _nothing_action(delta: float) -> void:
 	# El comportamiento pasivo puede incluir mirar al jugador más cercano si existe
-	if is_instance_valid(near_player):
-		Utils.view_to(global_position, near_player.global_position, rotation_speed, self)
+	#if is_instance_valid(near_player):
+		#Utils.view_to(global_position, near_player.global_position, 8.0, self)
 		
 	damage += damage_increment # incrementa el daño al no atacar
 
@@ -199,3 +195,11 @@ func _ball_attack_action(delta: float) -> void:
 	if damage > base_damage:
 		damage = base_damage
 	shot_attack.update(delta)
+
+func _add_boss_noise() -> void:
+	# Agrega ruido
+	if GlobalVars.current_episode < 500:
+		move_dir += Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5))
+		move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
+		shot_angle += randf_range(-0.5, 0.5) * PI
+		shot_angle = clamp(shot_angle, -PI, PI)

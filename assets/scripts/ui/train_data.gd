@@ -9,6 +9,7 @@ extends Control
 @onready var player_pos_label: Label = $Labels/PlayerPosLabel
 @onready var boss_pos_label: Label = $Labels/BossPosLabel
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	episode_label.text = "Episode: %d" % [GlobalVars.current_episode]
 	step_label.text = "Step: %d" % [GlobalVars.current_step]

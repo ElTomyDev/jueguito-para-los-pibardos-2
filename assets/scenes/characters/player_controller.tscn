@@ -41,13 +41,15 @@ script = ExtResource("5_xjp6k")
 
 [node name="Attacks" type="Node2D" parent="PlayerMechanics"]
 
-[node name="Shot" type="Node2D" parent="PlayerMechanics/Attacks"]
+[node name="Shot" type="Node2D" parent="PlayerMechanics/Attacks" node_paths=PackedStringArray("shot_point")]
 script = ExtResource("6_btdcj")
 bullet_color = Color(0.09343637, 0.8876975, 0.43807188, 1)
+shot_point = NodePath("ShotPoint")
 
 [node name="GunSprite" type="Sprite2D" parent="PlayerMechanics/Attacks/Shot"]
 
 [node name="ShotPoint" type="Node2D" parent="PlayerMechanics/Attacks/Shot"]
+position = Vector2(12, 0)
 
 [node name="DamageArea" type="Area2D" parent="." groups=["Players"]]
 collision_mask = 4

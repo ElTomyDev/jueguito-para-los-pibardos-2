@@ -4,6 +4,7 @@ class_name HealthBar
 @export var health_bar: ProgressBar = null
 @export var is_boss: bool = false
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	update_health_bar()
 
