@@ -2,8 +2,8 @@ extends RefCounted
 class_name NeuralNetwork
 
 # Arquitectura de la red
-var input_size: int = 18
-var hidden_size: int = 32
+var input_size: int = 23
+var hidden_size: int = 48
 var actor_output_size: int = 4  # [move_x, move_y, shot_angle, action_logits]
 var critic_output_size: int = 1 # [value]
 
@@ -19,8 +19,14 @@ var b_actor: Array = [] # Vector actor_output_size
 var W_critic: Array = [] # Matriz critic_output_size x hidden_size
 var b_critic: Array = [] # Vector critic_output_size
 
+# ---------- Target Network para el Critic ----------
+var target_W_critic: Array = []   # pesos objetivo
+var target_b_critic: Array = []   # sesgos objetivo
+var tau: float = 0.005            # factor de actualización suave
+
 func _init() -> void:
 	_init_weights()
+	_init_target_networks()
 
 func _init_weights() -> void:
 	# Inicialización de Xavier/Glorot para evitar desvanecimiento de gradiente
@@ -32,6 +38,24 @@ func _init_weights() -> void:
 	
 	W_critic = _random_matrix(critic_output_size, hidden_size, sqrt(2.0 / hidden_size))
 	b_critic = _zero_vector(critic_output_size)
+
+func _init_target_networks() -> void:
+	target_W_critic = _copy_matrix(W_critic)
+	target_b_critic = b_critic.duplicate()
+
+func _copy_matrix(mat: Array) -> Array:
+	var new_mat = []
+	for row in mat:
+		new_mat.append(row.duplicate())
+	return new_mat
+
+func soft_update() -> void:
+	# Actualización suave: target = tau * source + (1 - tau) * target
+	for i in range(target_W_critic.size()):
+		for j in range(target_W_critic[i].size()):
+			target_W_critic[i][j] = tau * W_critic[i][j] + (1 - tau) * target_W_critic[i][j]
+	for i in range(target_b_critic.size()):
+		target_b_critic[i] = tau * b_critic[i] + (1 - tau) * target_b_critic[i]
 
 # --- Funciones de Activación ---
 func _relu(x: float) -> float:
@@ -88,11 +112,12 @@ func forward(inputs: Array) -> Dictionary:
 
 # --- Utilitarios Matemáticos ---
 func _random_matrix(rows: int, cols: int, scale: float) -> Array:
-	var mat: Array = []
+	var mat = []
 	for i in range(rows):
-		var row: Array = []
+		var row = []
 		for j in range(cols):
-			row.append(randf_range(-1.0, 1.0) * scale)
+			var val = randf_range(-1.0, 1.0) * scale
+			row.append(val)
 		mat.append(row)
 	return mat
 

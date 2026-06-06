@@ -5,29 +5,24 @@ var bullet_color: Color = Color.RED
 
 var speed: float
 var life_time: float
-var dispersion: float
-var dir_to_mirror: Vector2
+var dir_to_mirror: Vector2 = Vector2.ZERO
 var damage: float
 
-var custom_dir: Vector2 = Vector2.ZERO
+var boss_dir: Vector2 = Vector2.ZERO
+var player_dir: Vector2 = Vector2.ZERO
 
 var from_group: StringName
 var group_target: StringName
 var target:Area2D = null
 
 func _ready() -> void:
-	var disp_x = randf_range(-dispersion, dispersion)
-	var disp_y = randf_range(-dispersion, dispersion)
-	if custom_dir != Vector2.ZERO:
+	
+	if boss_dir != Vector2.ZERO:
 		# Bala del boss: usa la dirección que decidió la red
-		dir_to_mirror = custom_dir + Vector2(disp_x, disp_y)
-	else:
+		dir_to_mirror = boss_dir 
+	elif player_dir != Vector2.ZERO:
 		# Bala del jugador: apunta al mouse
-		dir_to_mirror = Utils.view_to(
-			self.global_position,
-			get_global_mouse_position() + Vector2(disp_x, disp_y),
-			100.0, self, false
-		)
+		dir_to_mirror = player_dir
 	GlobalVars.bullets.append(self) # Agrega la bala a las variables globales para usarlas en el simulation_manager.gd
 
 func _process(delta: float) -> void:
@@ -59,6 +54,6 @@ func _on_area_entered(area: Area2D) -> void:
 		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
 		queue_free()
 
-func _on_visible_on_screen_enabler_2d_screen_exited() -> void:
-	GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))
-	queue_free()
+#func _on_visible_on_screen_enabler_2d_screen_exited() -> void:
+#	GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))
+#	queue_free()

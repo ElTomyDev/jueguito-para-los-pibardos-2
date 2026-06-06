@@ -20,7 +20,12 @@ size = Vector2(847, 20)
 [node name="TrainData" parent="." instance=ExtResource("2_56x64")]
 z_index = 1
 
-[node name="BossProgressBar" parent="TrainData" index="1"]
+[node name="NNLabels" parent="TrainData" index="1"]
+offset_left = 633.0
+offset_right = 673.0
+offset_bottom = 50.0
+
+[node name="BossProgressBar" parent="TrainData" index="2"]
 anchors_preset = 10
 anchor_left = 0.0
 anchor_right = 1.0
@@ -28,7 +33,7 @@ offset_left = 285.0
 offset_right = 585.0
 offset_bottom = 41.0
 
-[node name="PlayerProgressBar" parent="TrainData" index="2"]
+[node name="PlayerProgressBar" parent="TrainData" index="3"]
 offset_top = 275.0
 offset_bottom = 316.0
 
@@ -36,12 +41,12 @@ offset_bottom = 316.0
 player_spawn_point = NodePath("SpawnPlayer")
 
 [node name="SpawnPlayer" parent="SimulationManager" index="0"]
-position = Vector2(171, 269)
+position = Vector2(92, 244)
 
 [node name="SpawnBoss" parent="SimulationManager" index="1"]
-position = Vector2(519, 113)
+position = Vector2(689, 115)
 
-[node name="MapLimits" type="StaticBody2D" parent="."]
+[node name="MapLimits" type="StaticBody2D" parent="." groups=["World"]]
 collision_layer = 8
 collision_mask = 3
 

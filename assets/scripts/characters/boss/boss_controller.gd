@@ -3,6 +3,8 @@ class_name BossController
 
 var viewport_size: Vector2 
 
+const HIT_HISTORY_SIZE = 5
+
 # Componentes mecánicos (asegurate de que los paths a los nodos hijos sean los correctos en tu escena)
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
@@ -29,6 +31,8 @@ var boss_actions: Dictionary = {
 	0: func(_d): _nothing_action(_d),
 	1: func(d): _ball_attack_action(d)
 }
+
+var hit_history: Array = []
 
 var current_action: int = 0
 var move_dir: Vector2 = Vector2.ZERO
@@ -78,8 +82,8 @@ func update_boss(delta) -> void:
 			move_dir = Vector2(raw_dir[0], raw_dir[1])
 	
 	# Actualiza la accion a realizar
-	if GlobalVars.nn_outputs.has("current_action"):
-		current_action = int(GlobalVars.nn_outputs["current_action"]) if not force_attack_mode else attack_forced
+	if GlobalVars.nn_outputs.has("action"):
+		current_action = int(GlobalVars.nn_outputs["action"]) if not force_attack_mode else attack_forced
 	
 	# Actualiza el angulo de disparo
 	if GlobalVars.nn_outputs.has("shot_angle"):
@@ -106,15 +110,27 @@ func get_inputs() -> Array:
 	if near_player:
 		dist_to_player = global_position.distance_to(near_player.global_position) / viewport_size.length()
 	
+	var dist_to_bullet = 1.0
+	if near_bullet:
+		dist_to_bullet = global_position.distance_to(near_bullet.global_position) / viewport_size.length()
+	
 	var angle_to_player = 0.0
+	var player_vel = Vector2.ZERO
 	if near_player:
 		var to_player = (near_player.global_position - global_position).angle()
 		angle_to_player = abs(wrapf(to_player - shot_angle, -PI, PI)) / PI  # Normalizado [0,1]
+		player_vel = near_player.velocity.normalized()
 	
 	var rel_vel = Vector2.ZERO
 	if near_player:
 		rel_vel = near_player.velocity - velocity
 	
+	var time_since_last_shot = 1.0
+	if shot_attack.last_shot_step > 0:
+		time_since_last_shot = (GlobalVars.current_step - shot_attack.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE)
+		time_since_last_shot = clamp(time_since_last_shot, 0.0, 1.0)
+	
+	var dist_to_center = global_position.distance_to(viewport_size / 2) / viewport_size.length()
 	return [
 		self.global_position.x / viewport_size.x, # Posicion del jefe en X
 		self.global_position.y / viewport_size.y, # Posicion del jefe en X
@@ -126,9 +142,14 @@ func get_inputs() -> Array:
 		self.velocity.y / max_speed, # Velocidad del jefe en Y
 		self.health / max_health, # Vida del jefe
 		clamp(dist_to_player, 0.0, 1.0), # Distancia al jugador mas cercano
+		clamp(dist_to_bullet, 0.0, 1.0), # Distancia a la bala mar cercana
 		angle_to_player, # Diferencia angular entre el jefe y el jugador
 		rel_vel.x / max_speed, # Velocidad relativa del jugador en X
 		rel_vel.y / max_speed,  # Velocidad relativa del jugador en Y
+		player_vel.x, # Velocidad del jugador relativa al jefe Y
+		player_vel.y, # Velocidad del jugador relativa al jefe Y
+		time_since_last_shot,
+		dist_to_center
 	]
 
 func dead_if_can() -> void:
@@ -197,9 +218,19 @@ func _ball_attack_action(delta: float) -> void:
 	shot_attack.update(delta)
 
 func _add_boss_noise() -> void:
-	# Agrega ruido
-	if GlobalVars.current_episode < 500:
-		move_dir += Vector2(randf_range(-0.5, 0.5), randf_range(-0.5, 0.5))
-		move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
-		shot_angle += randf_range(-0.5, 0.5) * PI
-		shot_angle = clamp(shot_angle, -PI, PI)
+	
+	var move_dir_noise = 0.2
+	var shot_angle_noise = 0.3
+	var action_noise = 0.1
+	# Ruido de exploración siempre activo (pequeño)
+	move_dir += Vector2(randf_range(-move_dir_noise, move_dir_noise), randf_range(-move_dir_noise, move_dir_noise))
+	move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
+	shot_angle += randf_range(-shot_angle_noise, shot_angle_noise) * PI
+	shot_angle = clamp(shot_angle, -PI, PI)
+	if randf() < action_noise:
+		current_action = 1
+
+func register_hit(hit: bool) -> void:
+	hit_history.append(1.0 if hit else 0.0)
+	if hit_history.size() > HIT_HISTORY_SIZE:
+		hit_history.pop_front()

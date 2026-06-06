@@ -3,8 +3,8 @@
 [ext_resource type="Script" uid="uid://b5778vs5in57g" path="res://assets/scripts/attacks/bullet.gd" id="1_afa7u"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_liesp"]
-radius = 3.0
-height = 16.0
+radius = 1.0
+height = 6.0
 
 [node name="Bullet" type="Area2D" groups=["Atacks", "Bullets"]]
 collision_layer = 4
@@ -19,4 +19,5 @@ shape = SubResource("CapsuleShape2D_liesp")
 
 [connection signal="area_entered" from="." to="." method="_on_area_entered"]
 [connection signal="area_exited" from="." to="." method="_on_area_exited"]
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
 [connection signal="screen_exited" from="VisibleOnScreenEnabler2D" to="." method="_on_visible_on_screen_enabler_2d_screen_exited"]

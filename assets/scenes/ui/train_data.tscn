@@ -23,40 +23,60 @@ grow_vertical = 2
 size_flags_horizontal = 4
 script = ExtResource("1_xxqyw")
 
-[node name="Labels" type="VBoxContainer" parent="."]
+[node name="TrainLabels" type="VBoxContainer" parent="."]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0
 
-[node name="EpisodeLabel" type="Label" parent="Labels"]
+[node name="EpisodeLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BestEpisodeLabel" type="Label" parent="Labels"]
+[node name="BestEpisodeLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="StepLabel" type="Label" parent="Labels"]
+[node name="StepLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="RewardLabel" type="Label" parent="Labels"]
+[node name="RewardLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BestAvgRewardLabel" type="Label" parent="Labels"]
+[node name="BestAvgRewardLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="LastShotImpactLabel" type="Label" parent="Labels"]
+[node name="LastShotImpactLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="PlayerPosLabel" type="Label" parent="Labels"]
+[node name="PlayerPosLabel" type="Label" parent="TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BossPosLabel" type="Label" parent="Labels"]
+[node name="BossPosLabel" type="Label" parent="TrainLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="BossShotIntents" type="Label" parent="TrainLabels"]
+layout_mode = 2
+
+[node name="NNLabels" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="MoveDirLabel" type="Label" parent="NNLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="ShotAngleLabel" type="Label" parent="NNLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="ActionLabel" type="Label" parent="NNLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
@@ -116,10 +136,19 @@ offset_right = 40.0
 offset_bottom = 40.0
 script = ExtResource("3_lte46")
 
-[node name="Label" type="Label" parent="DistancePlayerToBoss"]
+[node name="ToPlayer" type="Label" parent="DistancePlayerToBoss"]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 23.0
+theme = ExtResource("2_36ew0")
 theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ToBullet" type="Label" parent="DistancePlayerToBoss"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+theme = ExtResource("2_36ew0")
 horizontal_alignment = 1
 vertical_alignment = 1

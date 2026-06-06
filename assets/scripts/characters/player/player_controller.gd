@@ -14,7 +14,7 @@ var viewport_size: Vector2
 @export_category("Player Stats")
 @export var max_health: float = 1000.0
 @export var health: float = 0.0
-@export var damage: float = 100.0
+@export var damage: float = 500.0
 
 @export_category("Player settings")
 @export var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
@@ -40,6 +40,7 @@ func _ready() -> void:
 	adjustable_jump.setup(self)
 	damage_area.setup(self)
 	shot_attack.setup(self)
+	
 
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
@@ -50,6 +51,7 @@ func _physics_process(delta: float) -> void:
 	smooth_movement.update(delta)
 	adjustable_jump.update(delta)
 	shot_attack.update(delta)
+	#_auto_shot()
 	move_and_slide()
 
 func init_player() -> void:
@@ -70,3 +72,37 @@ func dead_if_can() -> void:
 	if health <= 0.0:
 		queue_free()
 		GlobalVars.players.pop_at(GlobalVars.players.find(self))
+
+func _auto_shot() -> void:
+	if not is_instance_valid(GlobalVars.boss): return
+	var margin = 100
+	if GlobalVars.current_episode > 1200:
+		if GlobalVars.current_step % 50 == 0:
+			shot_attack._shot(Utils.view_to(
+			shot_attack.global_position,
+			GlobalVars.boss.global_position + Vector2(randf_range(-100, 100), randf_range(-100, 100)),
+			100.0, shot_attack, false
+			))
+	elif GlobalVars.current_episode > 800:
+		if GlobalVars.current_step == 200:
+			shot_attack._shot(Utils.view_to(
+			shot_attack.global_position,
+			GlobalVars.boss.global_position + Vector2(margin, margin),
+			100.0, shot_attack, false
+			))
+		if GlobalVars.current_step == 300:
+			shot_attack._shot(Utils.view_to(
+			shot_attack.global_position,
+			GlobalVars.boss.global_position - Vector2(margin, margin),
+			100.0, shot_attack, false
+			))
+		if GlobalVars.current_step == 400:
+			shot_attack._shot(Utils.view_to(
+			shot_attack.global_position,
+			GlobalVars.boss.global_position,
+			100.0, shot_attack, false
+			))
+
+func _auto_scape_from_boss_horizontal(delta: float) -> void:
+	if not is_instance_valid(GlobalVars.boss): return
+	dir_hor = global_position.x - GlobalVars.boss.global_position.x
