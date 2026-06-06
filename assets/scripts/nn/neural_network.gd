@@ -2,7 +2,7 @@ extends RefCounted
 class_name NeuralNetwork
 
 # Arquitectura de la red
-var input_size: int = 23
+var input_size: int = GlobalConst.INPUTS
 var hidden_size: int = 48
 var actor_output_size: int = 4  # [move_x, move_y, shot_angle, action_logits]
 var critic_output_size: int = 1 # [value]

@@ -1,5 +1,7 @@
 extends Node
 
+const INPUTS: int = 23
+
 const MAX_STEP_FOR_EPISODE: int = 600
 
 const SAVE_MODEL_PATH: String = "res://assets/train_data/boss_brain.json"

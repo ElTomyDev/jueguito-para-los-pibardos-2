@@ -7,7 +7,7 @@ var gamma: float = 0.99        # Factor de descuento para recompensas futuras
 
 # Regularización y estabilidad
 const MAX_GRAD: float = 1.0
-const WEIGHT_DECAY: float = 0.0005   # L2 decay (0.01% por actualización)
+const WEIGHT_DECAY: float = 0.000001   # L2 decay
 const WEIGHT_CLIP_MIN: float = -1.0   # Rango seguro para pesos
 const WEIGHT_CLIP_MAX: float = 1.0
 # Función auxiliar para obtener el valor del crítico objetivo

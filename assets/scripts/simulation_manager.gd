@@ -46,7 +46,6 @@ const MIN_PLAYER_DIST        : float = 500.0     # Humbral minimo para penalizar
 var nn          : NeuralNetwork
 var trainer     : NNTrainer
 var persistence : NNPersistence
-var total_inputs: int = 23
 
 # Variables para guardar el historial del último paso e iterar el algoritmo
 var last_state_activation: Dictionary = {}
@@ -58,15 +57,6 @@ var last_dist_to_player: float = 0.0
 var last_dist_to_bullet: float = 0.0
 
 var current_episode_rewards: Array = []
-
-# ------------------
-#  Experience Replay
-# ------------------
-var replay_buffer: Array = []
-var replay_step_counter: int = 0
-const BUFFER_SIZE: int = 10000
-const BATCH_SIZE: int = 6
-const REPLAY_TRAIN_FREQ: int = 3   # cada N pasos
 
 var is_resetting: bool = false
 
@@ -105,30 +95,7 @@ func _physics_process(_delta: float) -> void:
 	# 4. Entrenar usando el paso anterior completo (si existe)
 	if not last_state_activation.is_empty():
 		trainer.train_step(nn, last_state_activation, current_activation, reward, false, last_action_taken)
-	
-		# --- EXPERIENCE REPLAY: guardar transición en el buffer ---
-		var experience = {
-			"state": _duplicate_activation(last_state_activation),
-			"action": last_action_taken,
-			"reward": reward,
-			"next_state": _duplicate_activation(current_activation),
-			"done": false
-		}
-		replay_buffer.append(experience)
-		if replay_buffer.size() > BUFFER_SIZE:
-			replay_buffer.pop_front()
-		
-		# --- Entrenamiento con batch aleatorio del buffer ---
-		replay_step_counter += 1
-		if replay_step_counter >= REPLAY_TRAIN_FREQ and replay_buffer.size() >= BATCH_SIZE:
-			# Mezclar y tomar BATCH_SIZE muestras
-			replay_step_counter = 0
-			var batch = replay_buffer.duplicate()
-			batch.shuffle()
-			for i in range(BATCH_SIZE):
-				var xp = batch[i]
-				trainer.train_step(nn, xp.state, xp.next_state, xp.reward, xp.done, xp.action)
-	
+
 	# Guardar estado actual como referencia histórica para el próximo cuadro
 	last_state_activation = _duplicate_activation(current_activation)
 	last_action_taken = action_taken
@@ -243,27 +210,8 @@ func _handle_episode_end() -> void:
 			final_reward += REWARD_LOSE_EPISODE  + (GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step) * REWARD_FAST_BOSS_DEAD 
 		elif GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE:
 			final_reward += REWARD_LOSE_EPISODE # Castigo por no matar a tiempo
-		
-		
-		var final_exp = {
-			"state": _duplicate_activation(last_state_activation),
-			"action": last_action_taken,
-			"reward": final_reward,
-			"next_state": {},
-			"done": true
-		}
-		replay_buffer.append(final_exp)
-		if replay_buffer.size() > BUFFER_SIZE:
-			replay_buffer.pop_front()
-		
+	
 		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
-		if replay_buffer.size() >= BATCH_SIZE:
-			var batch = replay_buffer.duplicate()
-			batch.shuffle()
-			for i in range(BATCH_SIZE):
-				@warning_ignore("shadowed_global_identifier")
-				var exp = batch[i]
-				trainer.train_step(nn, exp.state, exp.next_state, exp.reward, exp.done, exp.action)
 	
 	print("Fin del Episodio: ", GlobalVars.current_episode, " | Recompensa Acumulada: ", GlobalVars.current_reward)
 	
@@ -297,7 +245,7 @@ func _reset_health_tracking() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for i in range(total_inputs): inputs.append(0.0)
+		for i in range(GlobalConst.INPUTS): inputs.append(0.0)
 		return inputs
 	
 	if is_instance_valid(GlobalVars.boss):
@@ -305,11 +253,11 @@ func _get_inputs_for_nn() -> Array:
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())
 	
-	# Garantizar que siempre devuelva exactamente (total_inputs) elementos rellenando si falta algo
-	while inputs.size() < total_inputs:
+	# Garantizar que siempre devuelva exactamente (GlobalConst.INPUTS) elementos rellenando si falta algo
+	while inputs.size() < GlobalConst.INPUTS:
 		inputs.append(0.0)
-	if inputs.size() > total_inputs: 
-		inputs = inputs.slice(0, total_inputs)
+	if inputs.size() > GlobalConst.INPUTS: 
+		inputs = inputs.slice(0, GlobalConst.INPUTS)
 	
 	return inputs
 

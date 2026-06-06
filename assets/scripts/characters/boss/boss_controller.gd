@@ -89,7 +89,7 @@ func update_boss(delta) -> void:
 	if GlobalVars.nn_outputs.has("shot_angle"):
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
 	
-	_add_boss_noise()
+	#_add_boss_noise()
 	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
@@ -142,7 +142,7 @@ func get_inputs() -> Array:
 		self.velocity.y / max_speed, # Velocidad del jefe en Y
 		self.health / max_health, # Vida del jefe
 		clamp(dist_to_player, 0.0, 1.0), # Distancia al jugador mas cercano
-		clamp(dist_to_bullet, 0.0, 1.0), # Distancia a la bala mar cercana
+		clamp(dist_to_bullet, 0.0, 1.0), # Distancia a la bala mas cercana
 		angle_to_player, # Diferencia angular entre el jefe y el jugador
 		rel_vel.x / max_speed, # Velocidad relativa del jugador en X
 		rel_vel.y / max_speed,  # Velocidad relativa del jugador en Y
