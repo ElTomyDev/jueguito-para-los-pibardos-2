@@ -153,13 +153,11 @@ func _calculate_reward() -> float:
 		var damage_dealt = last_player_health - current_hp
 		if damage_dealt > 0:
 			reward += (damage_dealt / player.max_health) * R_DAMAGE_DEALT
-		last_player_health = current_hp
 		
 		# Daño recibido (normalizado)
 		var damage_taken = last_boss_health - boss.health
 		if damage_taken > 0:
 			reward += (damage_taken / boss.max_health) * R_DAMAGE_TAKEN
-		last_boss_health = boss.health
 	
 	# --- FASE 3+: Esquive ---
 	if phase >= 3 and is_instance_valid(boss.near_bullet):
@@ -171,6 +169,11 @@ func _calculate_reward() -> float:
 		last_dist_to_bullet = dist
 	elif phase < 3:
 		last_dist_to_bullet = 0.0
+	
+	if is_instance_valid(player):
+		last_player_health = player.health
+	if is_instance_valid(GlobalVars.boss):
+		last_boss_health = GlobalVars.boss.health
 	
 	return reward
 
@@ -190,7 +193,8 @@ func _handle_episode_end() -> void:
 		# Timeout — se trata como derrota
 		final_reward = REWARD_LOSE
 	
-	trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
+	if not last_state_activation.is_empty():
+		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
 	
 	print("Fin del Episodio: ", GlobalVars.current_episode, " | Recompensa Acumulada: ", GlobalVars.current_reward)
 	

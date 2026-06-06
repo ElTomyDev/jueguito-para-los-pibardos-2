@@ -10,6 +10,7 @@ const MAX_GRAD: float = 1.0
 const WEIGHT_DECAY: float = 0.000001   # L2 decay
 const WEIGHT_CLIP_MIN: float = -1.0   # Rango seguro para pesos
 const WEIGHT_CLIP_MAX: float = 1.0
+
 # Función auxiliar para obtener el valor del crítico objetivo
 func _get_critic_target_value(nn: NeuralNetwork, hidden: Array) -> float:
 	var val = nn.target_b_critic[0]
@@ -20,8 +21,7 @@ func _get_critic_target_value(nn: NeuralNetwork, hidden: Array) -> float:
 func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictionary, reward: float, done: bool, action_taken: int) -> void:
 	var v_s: float = state_act["critic_value"]
 	
-	# Usamos la red objetivo para v_next
-	var v_next: float = 0.0 if done else _get_critic_target_value(nn, next_state_act["hidden"])
+	var v_next: float = 0.0 if done else next_state_act["critic_value"]
 	
 	# TD Error (Ventaja)
 	var td_target: float = reward + gamma * v_next
