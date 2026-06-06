@@ -93,7 +93,3 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 		nn.b1[i] = nn.b1[i] * (1.0 - WEIGHT_DECAY) - lr_actor * d_hidden[i]
 		nn.b1[i] = clamp(nn.b1[i], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 	
-	# ---------------------------------------------
-	# 6. Actualización suave de la red objetivo
-	# ---------------------------------------------
-	nn.soft_update()

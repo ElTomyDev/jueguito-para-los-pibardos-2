@@ -10,35 +10,31 @@ var viewport_size: Vector2
 @export var load_best_model     : bool = false
 @export var is_new_train        : bool = false
 
-# Recompensas principales
-const REWARD_DAMAGE_DEALT    : float =  1.0      # Por dañar al jugador (fuerte)
-const REWARD_DAMAGE_RECIBE   : float = -0.1      # Por recibir daño (castigo moderado)
-const REWARD_WIN_EPISODE     : float = 100.0     # Victoria (alta)
-const REWARD_LOSE_EPISODE    : float = -100.0    # Derrota (fuerte castigo)
-const REWARD_SURVIVE_STEP    : float =  0.0      # Paso a paso neutro
+# ---- Rewards unificados ----
+# Terminales
+const REWARD_WIN             : float =  100.0
+const REWARD_LOSE            : float = -100.0
+const REWARD_FAST_WIN_BONUS  : float =  0.2   # por step restante al ganar
+const REWARD_FAST_LOSE_BONUS : float = -0.1   # por step restante al perder rápido
 
-# Movimiento y posicionamiento
-const REWARD_NEAR_PLAYER     : float = 0.5        # Por estar cerca del jugador
-const REWARD_AWAY_PLAYER     : float = -0.2       # Por alejarse del jugador
-const REWARD_FOR_STATIC      : float = -0.2       # Por moverse
-const REWARD_DODGE_BULLET    : float = 0.05       # Esquivar balas enemigas
-const REWARD_REDUCE_DISTANCE : float = 0.05       # Por reducir la distancia hacia el jugador
+# Fase 0 — Movimiento
+const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
+const R_STATIC               : float = -0.3   # por estar quieto
 
-# Disparo y puntería
-const REWARD_GOD_AIM         : float = 0.8        # Apuntar bien
-const REWARD_BAD_AIM         : float = -0.1      # Apuntar mal (error >30°)
-const REWARD_NEAR_BULLET     : float = 1.0        # Bala pasa cerca del jugador
-const REWARD_FAIL_BULLET     : float = -0.05      # Bala lejos del jugador
+# Fase 1 — Proximidad
+const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)
+const R_TOO_FAR              : float = -0.2   # si supera MIN_DIST
 
-# Acción de disparar (decision de atacar)
-const REWARD_SHOOT_ACTION    : float = 0.1      # Pequeño bono por decidir disparar (evita que nunca dispare)
+# Fase 2 — Disparo y puntería
+const R_AIM_MAX              : float =  0.5   # escala por ángulo (0 a 0.5)
+const R_DAMAGE_DEALT         : float =  2.0   # por HP quitado al jugador
+const R_DAMAGE_TAKEN         : float = -0.05  # por HP perdido (normalizado)
 
-# Velocidad de victoria/derrota
-const REWARD_FAST_PLAYER_DEAD: float = 0.2       # Bono por matar rápido
-const REWARD_FAST_BOSS_DEAD  : float = -0.1      # Penalización por morir rápido
+# Fase 3 — Esquive
+const R_DODGE_BULLET         : float =  0.08  # por alejarse de bala
 
-const PROXIMITY_MAX_RANGE    : float = 130.0     # Rango de recompensa para proximidad de bala
-const MIN_PLAYER_DIST        : float = 500.0     # Humbral minimo para penalizar por lejania al jugador.
+const MIN_PLAYER_DIST        : float = 400.0
+const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movimiento"
 
 # ---------------
 #  Nodos de la NN
@@ -107,111 +103,94 @@ func _physics_process(_delta: float) -> void:
 	if _can_episode_end():
 		_handle_episode_end()
 
+# -----------------------------
+# --- Manejo de recompensas ---
+# -----------------------------
+func _get_current_phase() -> int:
+	var ep = GlobalVars.current_episode
+	if ep >= GlobalConst.PHASE_4_START: return 3
+	if ep >= GlobalConst.PHASE_3_START: return 2
+	if ep >= GlobalConst.PHASE_2_START: return 1
+	return 0
+
 func _calculate_reward() -> float:
-	var reward: float = REWARD_SURVIVE_STEP
+	var reward: float = 0.0
 	if not is_instance_valid(GlobalVars.boss): return reward
 	
-	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
-		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_player.global_position)
-		if dist > MIN_PLAYER_DIST:
-			reward += REWARD_AWAY_PLAYER
+	var phase: int = _get_current_phase()
+	var boss = GlobalVars.boss
+	var player = GlobalVars.players[0] if not GlobalVars.players.is_empty() else null
 	
-	# Si decide disparar
-	if GlobalVars.boss.current_action == 1:
-		reward += REWARD_SHOOT_ACTION
+	# --- FASE 0+: Movimiento base (siempre activo) ---
+	var speed = boss.velocity.length()
+	if speed < MIN_SPEED_THRESHOLD:
+		reward += R_STATIC
+	else:
+		reward += R_MOVING
 	
-	# Castigo por quedarse quieto
-	if GlobalVars.boss.velocity == Vector2.ZERO:
-		reward += REWARD_FOR_STATIC 
-	
-	# Recompensa por daño infligido al jugador
-	var current_player_health = GlobalVars.players[0].health
-	var damage_dealt = last_player_health - current_player_health
-	if damage_dealt > 0:
-		reward += damage_dealt * REWARD_DAMAGE_DEALT
-	last_player_health = GlobalVars.players[0].health
-	
-	# Castigo por recibir daño el Boss
-	var damage_taken = last_boss_health - GlobalVars.boss.health
-	if damage_taken > 0:
-		reward += damage_taken * REWARD_DAMAGE_RECIBE
-	last_boss_health = GlobalVars.boss.health
-	
-	# Por reducir la distancia hacia el jugador
-	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
-		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_player.global_position)
-		if last_dist_to_player > 0:
-			var dist_reduction = last_dist_to_player - dist
-			if dist_reduction > 0:
-				reward += dist_reduction * REWARD_REDUCE_DISTANCE
-		last_dist_to_player = dist
-	
-	# Recompensa por alejarse de la bala más cercana
-	if is_instance_valid(GlobalVars.boss.near_bullet):
-		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_bullet.global_position)
-		if last_dist_to_bullet > 0:
-			var dist_increase = dist - last_dist_to_bullet   # positivo si se aleja
-			if dist_increase > 0:
-				reward += dist_increase * REWARD_DODGE_BULLET   # factor multiplicador
-		last_dist_to_bullet = dist
-
-# Por la bala estar cerca del jugador
-	var bullets = GlobalVars.bullets
-	var p = GlobalVars.players[0] if GlobalVars.players.size() > 0 else null
-	if p and bullets.size() > 0:
-		for b in bullets:
-			if is_instance_valid(b) and b.from_group == "Boss": 
-				var dist = b.global_position.distance_to(p.global_position)
-				if dist <= PROXIMITY_MAX_RANGE:
-					reward += REWARD_NEAR_BULLET * (1.0 - (dist / PROXIMITY_MAX_RANGE))
-				else: # Si la bala esta lejos
-					reward += REWARD_FAIL_BULLET
-	
-	# Recompensa por acercarse al jugador
-	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
-		var dist = GlobalVars.boss.global_position.distance_to(GlobalVars.boss.near_player.global_position)
-		var max_dist = viewport_size.length()  # o un valor fijo como 1000
-		var closeness = 1.0 - clamp(dist / max_dist, 0.0, 1.0)
-		reward += REWARD_NEAR_PLAYER * closeness
-	
-	# Recompensa por apuntar hacia el jugador (incluso si no dispara)
-	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
-		var ideal_angle = (GlobalVars.boss.near_player.global_position - GlobalVars.boss.global_position).angle()
-		var angle_diff = abs(wrapf(ideal_angle - GlobalVars.boss.shot_angle, -PI, PI))
+	# --- FASE 1+: Proximidad al jugador ---
+	if phase >= 1 and is_instance_valid(player):
+		var dist = boss.global_position.distance_to(player.global_position)
+		var max_dist = viewport_size.length()
 		
-		var aim_reward = REWARD_GOD_AIM * (1.0 - (angle_diff / PI))   # máximo +0.1
-		reward += aim_reward
-		# Penalización adicional si el error es grande (> 30 grados)
-		if angle_diff > PI/6:
-			reward += REWARD_BAD_AIM
-		# Recompensa por reducir el error angular (girar en la dirección correcta)
-		if last_angle_error > 0:
-			var error_reduction = last_angle_error - angle_diff
-			if error_reduction > 0:
-				reward += error_reduction * 0.5   # premia girar hacia el jugador
-		last_angle_error = angle_diff
+		if dist > MIN_PLAYER_DIST:
+			reward += R_TOO_FAR
+		else:
+			var closeness = 1.0 - clamp(dist / MIN_PLAYER_DIST, 0.0, 1.0)
+			reward += R_CLOSENESS_MAX * closeness
 	
-	if reward > 1e6 or reward < -1e6:
-		print("Reward fuera de rango: ", reward)
-		reward = clamp(reward, -1000.0, 1000.0)
+	# --- FASE 2+: Disparo, puntería y daño ---
+	if phase >= 2 and is_instance_valid(player):
+		# Recompensa por puntería (solo si eligió atacar)
+		if boss.current_action == 1:
+			var ideal_angle = (player.global_position - boss.global_position).angle()
+			var angle_diff = abs(wrapf(ideal_angle - boss.shot_angle, -PI, PI))
+			reward += R_AIM_MAX * (1.0 - (angle_diff / PI))
+			last_angle_error = angle_diff
+		
+		# Daño infligido (normalizado por max_health del jugador)
+		var current_hp = player.health
+		var damage_dealt = last_player_health - current_hp
+		if damage_dealt > 0:
+			reward += (damage_dealt / player.max_health) * R_DAMAGE_DEALT
+		last_player_health = current_hp
+		
+		# Daño recibido (normalizado)
+		var damage_taken = last_boss_health - boss.health
+		if damage_taken > 0:
+			reward += (damage_taken / boss.max_health) * R_DAMAGE_TAKEN
+		last_boss_health = boss.health
+	
+	# --- FASE 3+: Esquive ---
+	if phase >= 3 and is_instance_valid(boss.near_bullet):
+		var dist = boss.global_position.distance_to(boss.near_bullet.global_position)
+		if last_dist_to_bullet > 0:
+			var dist_increase = dist - last_dist_to_bullet
+			if dist_increase > 0:
+				reward += dist_increase * R_DODGE_BULLET
+		last_dist_to_bullet = dist
+	elif phase < 3:
+		last_dist_to_bullet = 0.0
 	
 	return reward
 
 func _handle_episode_end() -> void:
 	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
 	is_resetting = true
+	var final_reward: float = 0.0
+	var steps_remaining = GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step
+
+	if GlobalVars.players.is_empty():
+		# Boss ganó
+		final_reward = REWARD_WIN + steps_remaining * REWARD_FAST_WIN_BONUS
+	elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
+		# Boss perdió
+		final_reward = REWARD_LOSE + steps_remaining * REWARD_FAST_LOSE_BONUS
+	else:
+		# Timeout — se trata como derrota
+		final_reward = REWARD_LOSE
 	
-	# Ejecutar un último paso final de entrenamiento avisando que done = true
-	if not last_state_activation.is_empty():
-		var final_reward: float = 0.0
-		if GlobalVars.players.is_empty():
-			final_reward += REWARD_WIN_EPISODE + (GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step) * REWARD_FAST_PLAYER_DEAD # Premio por matar al jugador
-		elif (is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0):
-			final_reward += REWARD_LOSE_EPISODE  + (GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step) * REWARD_FAST_BOSS_DEAD 
-		elif GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE:
-			final_reward += REWARD_LOSE_EPISODE # Castigo por no matar a tiempo
-	
-		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
+	trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
 	
 	print("Fin del Episodio: ", GlobalVars.current_episode, " | Recompensa Acumulada: ", GlobalVars.current_reward)
 	
