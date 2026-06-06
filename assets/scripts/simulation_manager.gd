@@ -118,20 +118,19 @@ func _calculate_reward() -> float:
 	if not is_instance_valid(GlobalVars.boss): return reward
 	
 	var phase: int = _get_current_phase()
-	var boss = GlobalVars.boss
-	var player = GlobalVars.players[0] if not GlobalVars.players.is_empty() else null
+	var b = GlobalVars.boss
+	var p = GlobalVars.players[0] if not GlobalVars.players.is_empty() else null
 	
 	# --- FASE 0+: Movimiento base (siempre activo) ---
-	var speed = boss.velocity.length()
+	var speed = b.velocity.length()
 	if speed < MIN_SPEED_THRESHOLD:
 		reward += R_STATIC
 	else:
 		reward += R_MOVING
 	
 	# --- FASE 1+: Proximidad al jugador ---
-	if phase >= 1 and is_instance_valid(player):
-		var dist = boss.global_position.distance_to(player.global_position)
-		var max_dist = viewport_size.length()
+	if phase >= 1 and is_instance_valid(p):
+		var dist = b.global_position.distance_to(p.global_position)
 		
 		if dist > MIN_PLAYER_DIST:
 			reward += R_TOO_FAR
@@ -140,28 +139,28 @@ func _calculate_reward() -> float:
 			reward += R_CLOSENESS_MAX * closeness
 	
 	# --- FASE 2+: Disparo, puntería y daño ---
-	if phase >= 2 and is_instance_valid(player):
+	if phase >= 2 and is_instance_valid(p):
 		# Recompensa por puntería (solo si eligió atacar)
-		if boss.current_action == 1:
-			var ideal_angle = (player.global_position - boss.global_position).angle()
-			var angle_diff = abs(wrapf(ideal_angle - boss.shot_angle, -PI, PI))
+		if b.current_action == 1:
+			var ideal_angle = (p.global_position - b.global_position).angle()
+			var angle_diff = abs(wrapf(ideal_angle - b.shot_angle, -PI, PI))
 			reward += R_AIM_MAX * (1.0 - (angle_diff / PI))
 			last_angle_error = angle_diff
 		
 		# Daño infligido (normalizado por max_health del jugador)
-		var current_hp = player.health
+		var current_hp = p.health
 		var damage_dealt = last_player_health - current_hp
 		if damage_dealt > 0:
-			reward += (damage_dealt / player.max_health) * R_DAMAGE_DEALT
+			reward += (damage_dealt / p.max_health) * R_DAMAGE_DEALT
 		
 		# Daño recibido (normalizado)
-		var damage_taken = last_boss_health - boss.health
+		var damage_taken = last_boss_health - b.health
 		if damage_taken > 0:
-			reward += (damage_taken / boss.max_health) * R_DAMAGE_TAKEN
+			reward += (damage_taken / b.max_health) * R_DAMAGE_TAKEN
 	
 	# --- FASE 3+: Esquive ---
-	if phase >= 3 and is_instance_valid(boss.near_bullet):
-		var dist = boss.global_position.distance_to(boss.near_bullet.global_position)
+	if phase >= 3 and is_instance_valid(b.near_bullet):
+		var dist = b.global_position.distance_to(b.near_bullet.global_position)
 		if last_dist_to_bullet > 0:
 			var dist_increase = dist - last_dist_to_bullet
 			if dist_increase > 0:
@@ -170,8 +169,8 @@ func _calculate_reward() -> float:
 	elif phase < 3:
 		last_dist_to_bullet = 0.0
 	
-	if is_instance_valid(player):
-		last_player_health = player.health
+	if is_instance_valid(p):
+		last_player_health = p.health
 	if is_instance_valid(GlobalVars.boss):
 		last_boss_health = GlobalVars.boss.health
 	
