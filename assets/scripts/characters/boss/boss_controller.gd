@@ -22,7 +22,7 @@ const HIT_HISTORY_SIZE = 5
 @export var attack_forced: int = 1
 
 @export_category("Movement Parameters")
-@export var max_speed: float = 150.0
+@export var max_speed: float = 230.0
 @export var acceleration_speed: float = 15.0 
 @export var deceleration_speed: float = 10.0
 
@@ -234,3 +234,10 @@ func register_hit(hit: bool) -> void:
 	hit_history.append(1.0 if hit else 0.0)
 	if hit_history.size() > HIT_HISTORY_SIZE:
 		hit_history.pop_front()
+
+func _on_damage_area_body_entered(bullet: Bullet) -> void:
+	if is_instance_valid(bullet):
+		if bullet.is_in_group("Bullets") and bullet.bullet.group_target == "Boss":
+			damage_area.apply_damage(bullet.damage)
+			print("jefe golpeado")
+			bullet.delete_bullet()

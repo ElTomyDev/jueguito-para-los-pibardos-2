@@ -3,7 +3,8 @@ extends Control
 
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
-	_update_distance_label($ToPlayer, GlobalVars.boss.near_player)
+	if is_instance_valid(GlobalVars.boss):
+		_update_distance_label($ToPlayer, GlobalVars.boss.near_player)
 #	_update_distance_label($ToBullet, GlobalVars.boss.near_bullet)
 	queue_redraw()
 

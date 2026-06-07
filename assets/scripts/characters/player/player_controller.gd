@@ -12,12 +12,13 @@ var viewport_size: Vector2
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
 
 @export_category("Player Stats")
-@export var max_health: float = 1000.0
+@export var max_health: float = 500.0
 @export var health: float = 0.0
-@export var damage: float = 500.0
+@export var damage: float = 1000.0
 
 @export_category("Player settings")
 @export var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
+@export var is_automatic: bool = true
 
 @export_category("Movement Parameters")
 @export var max_speed : float = 300.0
@@ -33,6 +34,9 @@ var player_id: int = 0
 var bullet_from_group: StringName = "Players" # Grupo al que pertenece la bala
 var bullet_to_group: StringName = "Boss" # Target de la bala
 
+var auto_vel: float = 1300.0
+var auto_dir: int = 1
+
 func _ready() -> void:
 	init_player()
 	controls.setup(self)
@@ -40,7 +44,6 @@ func _ready() -> void:
 	adjustable_jump.setup(self)
 	damage_area.setup(self)
 	shot_attack.setup(self)
-	
 
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
@@ -49,9 +52,9 @@ func _process(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	controls.update()
 	smooth_movement.update(delta)
-	adjustable_jump.update(delta)
 	shot_attack.update(delta)
-	_auto_shot()
+	adjustable_jump.update(delta)
+	update_automatic_mechanics(delta)
 	move_and_slide()
 
 func init_player() -> void:
@@ -73,6 +76,11 @@ func dead_if_can() -> void:
 		queue_free()
 		GlobalVars.players.pop_at(GlobalVars.players.find(self))
 
+func update_automatic_mechanics(delta: float) -> void:
+	if is_automatic:
+		_auto_shot()
+		_auto_move(delta)
+
 func _auto_shot() -> void:
 	if not is_instance_valid(GlobalVars.boss): return
 	var margin = 100
@@ -83,3 +91,15 @@ func _auto_shot() -> void:
 			GlobalVars.boss.global_position + Vector2(randf_range(-margin, margin), randf_range(-margin, margin)),
 			100.0, shot_attack, false
 			))
+
+func _auto_move(delta: float) -> void:
+	if GlobalVars.current_episode >= 600:
+		if GlobalVars.current_step % 300 == 0:
+			auto_dir = -1*(auto_dir)
+		self.velocity.x = auto_dir * (auto_vel * delta)
+
+func _on_damage_area_body_entered(bullet: Bullet) -> void:
+	if is_instance_valid(bullet):
+		if bullet.is_in_group("Bullets") and bullet.group_target == "Players":
+			damage_area.apply_damage(bullet.damage)
+			bullet.delete_bullet(self)

@@ -6,7 +6,7 @@ var viewport_size: Vector2
 @export var boss                : PackedScene
 @export var player_spawn_point  : Node2D
 @export var boss_spawn_point    : Node2D
-@export var random_spawns       : bool = false
+@export var random_spawns       : bool = true
 @export var load_best_model     : bool = false
 @export var is_new_train        : bool = false
 

@@ -1,4 +1,4 @@
-extends Node2D
+extends CharacterBody2D
 class_name Bullet
 
 var bullet_color: Color = Color.RED
@@ -31,9 +31,10 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	move_bullet(delta)
+	move_and_slide()
 
 func move_bullet(delta:float) -> void:
-	self.position += dir_to_mirror.normalized() * speed * delta 
+	self.velocity += dir_to_mirror.normalized() * speed * delta 
 
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:
@@ -44,15 +45,15 @@ func _dead_if_can(delta: float) -> void:
 func _draw() -> void:
 	draw_line(Vector2.ZERO, Vector2(9,0), bullet_color, 4.0)
 
-func _on_area_entered(area: Area2D) -> void:
-	if area.is_in_group(group_target):
-		area.apply_damage(damage)
-		if from_group == "Boss" and area.character:
-			GlobalVars.shot_impact = area.character.global_position
-		elif from_group == "Boss":
+func delete_bullet(player: PlayerController=null):
+	if from_group == "Boss":
+		if not player:
 			GlobalVars.shot_impact = self.global_position
-		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
-		queue_free()
+		else:
+			GlobalVars.shot_impact = player.global_position
+	GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
+	queue_free()
+
 
 #func _on_visible_on_screen_enabler_2d_screen_exited() -> void:
 #	GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))

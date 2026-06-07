@@ -6,9 +6,9 @@
 radius = 1.0
 height = 6.0
 
-[node name="Bullet" type="Area2D" groups=["Atacks", "Bullets"]]
+[node name="Bullet" type="CharacterBody2D" groups=["Atacks", "Bullets"]]
 collision_layer = 4
-collision_mask = 11
+collision_mask = 0
 script = ExtResource("1_afa7u")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
@@ -16,8 +16,3 @@ rotation = -1.5707964
 shape = SubResource("CapsuleShape2D_liesp")
 
 [node name="VisibleOnScreenEnabler2D" type="VisibleOnScreenEnabler2D" parent="."]
-
-[connection signal="area_entered" from="." to="." method="_on_area_entered"]
-[connection signal="area_exited" from="." to="." method="_on_area_exited"]
-[connection signal="body_entered" from="." to="." method="_on_body_entered"]
-[connection signal="screen_exited" from="VisibleOnScreenEnabler2D" to="." method="_on_visible_on_screen_enabler_2d_screen_exited"]

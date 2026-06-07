@@ -2,8 +2,8 @@ extends Node2D
 class_name  ShotAttack
 
 @export_category("Bullet Settings")
-@export var bullet_speed: float = 500.0
-@export var bullet_life_time: float = 1.5
+@export var bullet_speed: float = 600.0
+@export var bullet_life_time: float = 2.3
 @export var bullet_color: Color
 
 @export_category("Gun Settings")
@@ -99,7 +99,7 @@ func _init_boss_values() -> void:
 	fire_timer = 0.0
 	
 	bullet_speed = 500.0
-	bullet_life_time = 1.5
+	bullet_life_time = 2.3
 	bullet_dispersion = 1.0
 
 func _get_total_bullet_damage() -> float:

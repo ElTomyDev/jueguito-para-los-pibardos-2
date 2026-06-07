@@ -57,3 +57,5 @@ script = ExtResource("7_btdcj")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
 shape = SubResource("CircleShape2D_8ckkg")
+
+[connection signal="body_entered" from="DamageArea" to="." method="_on_damage_area_body_entered"]
