@@ -35,8 +35,8 @@ bullet_dispersion = 1.0
 is_boss = true
 
 [node name="DamageArea" type="Area2D" parent="." groups=["Boss"]]
-collision_layer = 2
-collision_mask = 0
+collision_layer = 0
+collision_mask = 4
 script = ExtResource("5_5dy75")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]

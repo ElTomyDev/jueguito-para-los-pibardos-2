@@ -1,6 +1,6 @@
 extends Node
 
-const INPUTS: int = 23
+const INPUTS: int = 25
 
 # Fases de entrenamiento
 const PHASE_1_START: int = 0    # Solo movimiento

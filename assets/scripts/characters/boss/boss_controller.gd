@@ -247,5 +247,4 @@ func _on_damage_area_body_entered(bullet: Node2D) -> void:
 	if is_instance_valid(bullet):
 		if bullet.is_in_group("Bullets") and bullet.group_target == "Boss":
 			damage_area.apply_damage(bullet.damage)
-			print("jefe golpeado")
 			bullet.delete_bullet()
