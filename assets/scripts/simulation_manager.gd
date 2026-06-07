@@ -81,8 +81,12 @@ func _physics_process(_delta: float) -> void:
 	_update_nn_outputs(current_activation["actor_outputs"])
 	
 	# Determinar acción discreta tomada por la red basados en umbral de probabilidad (0.5)
-	var action_taken: int = 1 if current_activation["actor_outputs"][3] >= 0.5 else 0
-	
+	var epsilon: float = max(0.05, 0.3 - GlobalVars.current_episode * 0.0001)
+	var action_taken: int
+	if randf() < epsilon:
+		action_taken = 1  # forzar disparo para explorar
+	else:
+		action_taken = 1 if current_activation["actor_outputs"][3] >= 0.5 else 0
 	# 3. Calcular la recompensa del paso actual de entrenamiento
 	var reward: float = _calculate_reward()
 	GlobalVars.current_reward += reward

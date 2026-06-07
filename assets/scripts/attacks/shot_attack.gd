@@ -2,7 +2,6 @@ extends Node2D
 class_name  ShotAttack
 
 @export_category("Bullet Settings")
-@export var bullet_speed: float = 600.0
 @export var bullet_life_time: float = 2.3
 @export var bullet_color: Color
 
@@ -71,7 +70,6 @@ func _set_bullet_values(bullet_instence: Bullet, custom_bullet_dir:Vector2) -> v
 	
 	bullet_instence.global_position = shot_point.global_position if is_instance_valid(shot_point) else character.global_position
 	bullet_instence.life_time = bullet_life_time
-	bullet_instence.speed = bullet_speed
 	bullet_instence.damage = _get_total_bullet_damage()
 	bullet_instence.from_group = character.bullet_from_group
 	bullet_instence.group_target = character.bullet_to_group
@@ -97,8 +95,6 @@ func _init_boss_values() -> void:
 	rotation_speed = 25.0
 	fire_rate = 0.1
 	fire_timer = 0.0
-	
-	bullet_speed = 500.0
 	bullet_life_time = 2.3
 	bullet_dispersion = 1.0
 

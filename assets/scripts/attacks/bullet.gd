@@ -3,7 +3,7 @@ class_name Bullet
 
 var bullet_color: Color = Color.RED
 
-var speed: float
+var speed: float= 300.0
 var life_time: float
 var dir_to_mirror: Vector2 = Vector2.ZERO
 var damage: float
@@ -34,7 +34,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 func move_bullet(delta:float) -> void:
-	self.velocity += dir_to_mirror.normalized() * speed * delta 
+	self.velocity = dir_to_mirror.normalized() * speed
 
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:

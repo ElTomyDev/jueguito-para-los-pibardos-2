@@ -125,12 +125,18 @@ func get_inputs() -> Array:
 	if near_player:
 		rel_vel = near_player.velocity - velocity
 	
+	var near_bullet_vel = Vector2.ZERO
+	if is_instance_valid(near_bullet):
+		near_bullet_vel = near_bullet.velocity.normalized()
+	
+	
 	var time_since_last_shot = 1.0
 	if shot_attack.last_shot_step > 0:
 		time_since_last_shot = (GlobalVars.current_step - shot_attack.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE)
 		time_since_last_shot = clamp(time_since_last_shot, 0.0, 1.0)
 	
 	var dist_to_center = global_position.distance_to(viewport_size / 2) / viewport_size.length()
+	
 	return [
 		self.global_position.x / viewport_size.x, # Posicion del jefe en X
 		self.global_position.y / viewport_size.y, # Posicion del jefe en X
@@ -149,7 +155,9 @@ func get_inputs() -> Array:
 		player_vel.x, # Velocidad del jugador relativa al jefe Y
 		player_vel.y, # Velocidad del jugador relativa al jefe Y
 		time_since_last_shot,
-		dist_to_center
+		dist_to_center,
+		near_bullet_vel.x, # Velocidad de la bala mas cercana X
+		near_bullet_vel.y, # Velocidad de la bala mas cercana Y
 	]
 
 func dead_if_can() -> void:
@@ -235,9 +243,9 @@ func register_hit(hit: bool) -> void:
 	if hit_history.size() > HIT_HISTORY_SIZE:
 		hit_history.pop_front()
 
-func _on_damage_area_body_entered(bullet: Bullet) -> void:
+func _on_damage_area_body_entered(bullet: Node2D) -> void:
 	if is_instance_valid(bullet):
-		if bullet.is_in_group("Bullets") and bullet.bullet.group_target == "Boss":
+		if bullet.is_in_group("Bullets") and bullet.group_target == "Boss":
 			damage_area.apply_damage(bullet.damage)
 			print("jefe golpeado")
 			bullet.delete_bullet()

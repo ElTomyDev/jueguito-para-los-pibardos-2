@@ -8,7 +8,7 @@ height = 6.0
 
 [node name="Bullet" type="CharacterBody2D" groups=["Atacks", "Bullets"]]
 collision_layer = 4
-collision_mask = 0
+collision_mask = 11
 script = ExtResource("1_afa7u")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
