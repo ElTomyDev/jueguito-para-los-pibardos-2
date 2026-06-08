@@ -49,6 +49,16 @@ var bullet_to_group: StringName = "Players"
 var near_player: PlayerController = null
 var near_bullet: Bullet = null
 
+# Para los input de la red
+var near_bullet_pos = Vector2.ZERO
+var dist_to_player = 1.0
+var dist_to_bullet = 1.0
+var angle_to_player = 0.0
+var player_vel = Vector2.ZERO
+var rel_vel = Vector2.ZERO
+var near_bullet_vel = Vector2.ZERO
+var time_since_last_shot = 1.0
+
 func _ready() -> void:
 	init_boss()
 
@@ -102,35 +112,27 @@ func update_boss(delta) -> void:
 	global_position.y = clamp(global_position.y, 0.0, viewport_size.y)
 
 func get_inputs() -> Array:
-	var near_bullet_pos = Vector2.ZERO
+	
 	if is_instance_valid(near_bullet):
 		near_bullet_pos = near_bullet.global_position
 	
-	var dist_to_player = 1.0
-	if near_player:
+	if is_instance_valid(near_player):
 		dist_to_player = global_position.distance_to(near_player.global_position) / viewport_size.length()
 	
-	var dist_to_bullet = 1.0
-	if near_bullet:
+	if is_instance_valid(near_bullet):
 		dist_to_bullet = global_position.distance_to(near_bullet.global_position) / viewport_size.length()
 	
-	var angle_to_player = 0.0
-	var player_vel = Vector2.ZERO
-	if near_player:
+	if is_instance_valid(near_player):
 		var to_player = (near_player.global_position - global_position).angle()
 		angle_to_player = abs(wrapf(to_player - shot_angle, -PI, PI)) / PI  # Normalizado [0,1]
 		player_vel = near_player.velocity.normalized()
 	
-	var rel_vel = Vector2.ZERO
-	if near_player:
+	if is_instance_valid(near_player):
 		rel_vel = near_player.velocity - velocity
 	
-	var near_bullet_vel = Vector2.ZERO
 	if is_instance_valid(near_bullet):
 		near_bullet_vel = near_bullet.velocity.normalized()
 	
-	
-	var time_since_last_shot = 1.0
 	if shot_attack.last_shot_step > 0:
 		time_since_last_shot = (GlobalVars.current_step - shot_attack.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE)
 		time_since_last_shot = clamp(time_since_last_shot, 0.0, 1.0)

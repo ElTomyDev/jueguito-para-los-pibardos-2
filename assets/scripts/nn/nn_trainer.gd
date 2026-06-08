@@ -1,7 +1,7 @@
 extends RefCounted
 class_name NNTrainer
 
-var lr_actor: float = 0.0002   # Learning rate para el Actor
+var lr_actor: float = 0.0001   # Learning rate para el Actor
 var lr_critic: float = 0.0005   # Learning rate para el Crítico (puede ser mayor)
 var gamma: float = 0.99        # Factor de descuento para recompensas futuras
 

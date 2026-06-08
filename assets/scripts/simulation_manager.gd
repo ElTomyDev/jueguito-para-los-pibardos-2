@@ -19,7 +19,7 @@ const REWARD_FAST_LOSE_BONUS : float = -0.1   # por step restante al perder ráp
 
 # Fase 0 — Movimiento
 const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
-const R_STATIC               : float = -0.35   # por estar quieto
+const R_STATIC               : float = -0.3   # por estar quieto
 
 # Fase 1 — Proximidad
 const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)
@@ -57,7 +57,7 @@ var current_episode_rewards: Array = []
 var is_resetting: bool = false
 
 func _ready() -> void:
-	Engine.time_scale = 1.0
+	Engine.time_scale = 2.0
 	_load_train_data()
 	_init_nn_core()
 	_spawn_entities()
@@ -87,7 +87,7 @@ func _physics_process(_delta: float) -> void:
 		GlobalVars.nn_outputs["move_dir"] = [randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)]
 		action_taken = randi() % 2
 	else:
-		action_taken = 1 if current_activation["actor_outputs"][3] >= 0.5 else 0
+		action_taken = 1 if current_activation["actor_outputs"][3] >= 0.2 else 0
 	# 3. Calcular la recompensa del paso actual de entrenamiento
 	var reward: float = _calculate_reward()
 	GlobalVars.current_reward += reward
@@ -103,6 +103,7 @@ func _physics_process(_delta: float) -> void:
 	
 	if GlobalVars.boss.current_action == 1:
 		GlobalVars.shot_intents += 1
+	
 	
 	# 5. Comprobar condiciones de fin del episodio
 	if _can_episode_end():
@@ -204,8 +205,8 @@ func _handle_episode_end() -> void:
 	_check_and_save_best()
 	_save_train_data()
 	
+	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
 	GlobalVars.current_episode += 1
-	
 	_reset_episode()
 	_reset_health_tracking()
 
@@ -362,12 +363,14 @@ func _load_train_data() -> void:
 		GlobalVars.current_episode = data['episode'] if not load_best_model else data['best_avg_episode']
 		GlobalVars.best_avg_reward = data['best_avg_reward']
 		GlobalVars.best_avg_episode = data['best_avg_episode']
+		GlobalVars.episode_rewards = data['episodes_rewards']
 
 func _save_train_data() -> void:
 	var data: Dictionary = {
 		'episode': GlobalVars.current_episode,
 		'best_avg_reward': GlobalVars.best_avg_reward,
-		'best_avg_episode': GlobalVars.best_avg_episode
+		'best_avg_episode': GlobalVars.best_avg_episode,
+		'episodes_rewards': GlobalVars.episode_rewards
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)
 

@@ -18,9 +18,8 @@ extends CanvasLayer
 var episode_rewards: Array = []
 var reward_plot: PlotItem
 
-var view_graph: bool = false
+var view_graph: bool = true
 var view_train_info: bool = true
-
 
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
@@ -58,23 +57,28 @@ func update_label_view() -> void:
 		view_graph = !view_graph
 	
 func update_reward_graph() -> void:
+	if reward_graph:
+		if Input.is_action_just_pressed("g_right"):
+			reward_graph.x_max += 10
+		if Input.is_action_just_pressed("g_left"):
+			reward_graph.x_max -= 10
+		if Input.is_action_just_pressed("g_up"):
+			reward_graph.y_min -= 10
+			reward_graph.y_max += 10
+		if Input.is_action_just_pressed("g_down"):
+			reward_graph.y_min += 10
+			reward_graph.y_max -= 10
 	# 1. Initialize the plot the first time the function is called
 	if reward_graph and not reward_plot:
 		# 'add_plot_item' returns a PlotItem object, which we store to reference the plot later
-		reward_plot = reward_graph.add_plot_item("", Color.YELLOW, 1.0)
+		reward_plot = reward_graph.add_plot_item("", Color.YELLOW)
 	
-	var current_ep = GlobalVars.current_episode
-	
-	# 2. Add the reward only if it's a new episode
-	if episode_rewards.size() <= current_ep:
-		var new_reward = GlobalVars.current_reward
-		episode_rewards.append(new_reward)
-	
+	if not GlobalVars.episode_rewards.is_empty():
 		# 3. Update the graph: clear the old points and add the new series
 		if reward_plot:
 			# Clear all points from the existing plot
 			reward_plot.remove_all()
 			
 			# Add all accumulated rewards as points again
-			for i in episode_rewards.size():
-				reward_plot.add_point(Vector2(i, episode_rewards[i]))
+			for i in GlobalVars.episode_rewards.size():
+				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))

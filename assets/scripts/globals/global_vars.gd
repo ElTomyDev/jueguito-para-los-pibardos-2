@@ -5,6 +5,8 @@ var current_reward: float = 0.0
 var current_episode: int = 0
 var current_step: int = 0
 
+var episode_rewards: Array = [] # Para graficar 
+
 var shot_intents: int = 0
 
 var recent_rewards: Array = []   # guarda las últimas N recompensas
