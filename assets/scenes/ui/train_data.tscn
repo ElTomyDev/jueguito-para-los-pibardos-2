@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3 uid="uid://b3fjumhorxnno"]
+[gd_scene load_steps=8 format=3 uid="uid://b3fjumhorxnno"]
 
 [ext_resource type="Script" uid="uid://cu3rrjy1r55o1" path="res://assets/scripts/ui/health_bar.gd" id="1_m6jmp"]
 [ext_resource type="Script" uid="uid://b3pqsq7nh6o3" path="res://assets/scripts/ui/train_data.gd" id="1_xxqyw"]
 [ext_resource type="Theme" uid="uid://bfkxyuwxfbngm" path="res://assets/themes/label_train_data_theme.tres" id="2_36ew0"]
 [ext_resource type="Script" uid="uid://c4nm5g5opr2h2" path="res://assets/scripts/ui/distance_player_to_boss.gd" id="3_lte46"]
+[ext_resource type="Script" uid="uid://cnts4ojg8ycdr" path="res://addons/graph_2d/graph_2d.gd" id="5_vvcvi"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_m6jmp"]
 line_spacing = 1.0
@@ -13,74 +14,77 @@ font_size = 10
 line_spacing = 1.0
 font_size = 10
 
-[node name="TrainData" type="Control"]
+[node name="TrainData" type="CanvasLayer"]
+script = ExtResource("1_xxqyw")
+
+[node name="Control" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-size_flags_horizontal = 4
-script = ExtResource("1_xxqyw")
 
-[node name="TrainLabels" type="VBoxContainer" parent="."]
+[node name="TrainLabels" type="VBoxContainer" parent="Control"]
 layout_mode = 0
 offset_right = 40.0
-offset_bottom = 40.0
+offset_bottom = 167.0
 
-[node name="EpisodeLabel" type="Label" parent="TrainLabels"]
+[node name="EpisodeLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BestEpisodeLabel" type="Label" parent="TrainLabels"]
+[node name="BestEpisodeLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="StepLabel" type="Label" parent="TrainLabels"]
+[node name="StepLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="RewardLabel" type="Label" parent="TrainLabels"]
+[node name="RewardLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BestAvgRewardLabel" type="Label" parent="TrainLabels"]
+[node name="BestAvgRewardLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="LastShotImpactLabel" type="Label" parent="TrainLabels"]
+[node name="LastShotImpactLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="PlayerPosLabel" type="Label" parent="TrainLabels"]
+[node name="PlayerPosLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BossPosLabel" type="Label" parent="TrainLabels"]
+[node name="BossPosLabel" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BossShotIntents" type="Label" parent="TrainLabels"]
+[node name="BossShotIntents" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 
-[node name="NNLabels" type="VBoxContainer" parent="."]
+[node name="NNLabels" type="VBoxContainer" parent="Control"]
 layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
+offset_left = 845.0
+offset_top = 5.0
+offset_right = 885.0
+offset_bottom = 55.0
 
-[node name="MoveDirLabel" type="Label" parent="NNLabels"]
+[node name="MoveDirLabel" type="Label" parent="Control/NNLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="ShotAngleLabel" type="Label" parent="NNLabels"]
+[node name="ShotAngleLabel" type="Label" parent="Control/NNLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="ActionLabel" type="Label" parent="NNLabels"]
+[node name="ActionLabel" type="Label" parent="Control/NNLabels"]
 layout_mode = 2
 theme = ExtResource("2_36ew0")
 
-[node name="BossProgressBar" type="VBoxContainer" parent="." node_paths=PackedStringArray("health_bar")]
+[node name="BossProgressBar" type="VBoxContainer" parent="Control" node_paths=PackedStringArray("health_bar")]
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
@@ -94,49 +98,51 @@ script = ExtResource("1_m6jmp")
 health_bar = NodePath("BossHealth")
 is_boss = true
 
-[node name="BossHealth" type="ProgressBar" parent="BossProgressBar"]
+[node name="BossHealth" type="ProgressBar" parent="Control/BossProgressBar"]
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
 size_flags_horizontal = 4
 rounded = true
 
-[node name="Label" type="Label" parent="BossProgressBar"]
+[node name="Label" type="Label" parent="Control/BossProgressBar"]
 layout_mode = 2
 text = "Boss Health"
 label_settings = SubResource("LabelSettings_m6jmp")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PlayerProgressBar" type="VBoxContainer" parent="." node_paths=PackedStringArray("health_bar")]
+[node name="PlayerProgressBar" type="VBoxContainer" parent="Control" node_paths=PackedStringArray("health_bar")]
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_top = -40.0
-offset_right = 100.0
+offset_left = 920.0
+offset_top = -46.0
+offset_right = 1020.0
+offset_bottom = -5.0
 grow_vertical = 0
 theme_override_constants/separation = 0
 script = ExtResource("1_m6jmp")
 health_bar = NodePath("PlayerHealth")
 
-[node name="Label" type="Label" parent="PlayerProgressBar"]
+[node name="Label" type="Label" parent="Control/PlayerProgressBar"]
 layout_mode = 2
 text = "Player health"
 label_settings = SubResource("LabelSettings_xidqr")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PlayerHealth" type="ProgressBar" parent="PlayerProgressBar"]
+[node name="PlayerHealth" type="ProgressBar" parent="Control/PlayerProgressBar"]
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 
-[node name="DistancePlayerToBoss" type="Control" parent="."]
+[node name="DistancePlayerToBoss" type="Control" parent="Control"]
 anchors_preset = 0
 offset_right = 40.0
 offset_bottom = 40.0
 script = ExtResource("3_lte46")
 
-[node name="ToPlayer" type="Label" parent="DistancePlayerToBoss"]
+[node name="ToPlayer" type="Label" parent="Control/DistancePlayerToBoss"]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 23.0
@@ -145,10 +151,28 @@ theme_override_font_sizes/font_size = 10
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="ToBullet" type="Label" parent="DistancePlayerToBoss"]
+[node name="ToBullet" type="Label" parent="Control/DistancePlayerToBoss"]
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 23.0
 theme = ExtResource("2_36ew0")
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="Graph2D" type="Control" parent="Control"]
+anchors_preset = 0
+offset_top = 230.0
+offset_right = 746.0
+offset_bottom = 639.0
+script = ExtResource("5_vvcvi")
+x_max = 1000.0
+x_label = "Episode"
+show_x_ticks = false
+y_min = -80.0
+y_max = 80.0
+y_label = "Reward"
+show_y_ticks = false
+background_color = Color(0, 0, 0, 0)
+grid_horizontal_visible = true
+grid_vertical_visible = true
+metadata/_custom_type_script = "uid://cnts4ojg8ycdr"

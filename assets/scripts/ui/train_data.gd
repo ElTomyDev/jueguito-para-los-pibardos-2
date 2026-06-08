@@ -1,24 +1,35 @@
-extends Control
+extends CanvasLayer
 
-@onready var episode_label: Label = $TrainLabels/EpisodeLabel
-@onready var step_label: Label = $TrainLabels/StepLabel
-@onready var reward_label: Label = $TrainLabels/RewardLabel
-@onready var last_shot_impact_label: Label = $TrainLabels/LastShotImpactLabel
-@onready var best_avg_reward_label: Label = $TrainLabels/BestAvgRewardLabel
-@onready var best_episode_label: Label = $TrainLabels/BestEpisodeLabel
-@onready var player_pos_label: Label = $TrainLabels/PlayerPosLabel
-@onready var boss_pos_label: Label = $TrainLabels/BossPosLabel
+@onready var reward_graph: Graph2D = $Control/Graph2D
 
-@onready var move_dir_label: Label = $NNLabels/MoveDirLabel
-@onready var shot_angle_label: Label = $NNLabels/ShotAngleLabel
-@onready var action_label: Label = $NNLabels/ActionLabel
+@onready var episode_label: Label = $Control/TrainLabels/EpisodeLabel
+@onready var step_label: Label = $Control/TrainLabels/StepLabel
+@onready var reward_label: Label = $Control/TrainLabels/RewardLabel
+@onready var last_shot_impact_label: Label = $Control/TrainLabels/LastShotImpactLabel
+@onready var best_avg_reward_label: Label = $Control/TrainLabels/BestAvgRewardLabel
+@onready var best_episode_label: Label = $Control/TrainLabels/BestEpisodeLabel
+@onready var player_pos_label: Label = $Control/TrainLabels/PlayerPosLabel
+@onready var boss_pos_label: Label = $Control/TrainLabels/BossPosLabel
 
+@onready var move_dir_label: Label = $Control/NNLabels/MoveDirLabel
+@onready var shot_angle_label: Label = $Control/NNLabels/ShotAngleLabel
+@onready var action_label: Label = $Control/NNLabels/ActionLabel
+
+var episode_rewards: Array = []
+var reward_plot: PlotItem
+
+var view_graph: bool = false
 var view_train_info: bool = true
+
 
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	update_label_view()
-	
+	if view_graph:
+		reward_graph.visible = true
+		update_reward_graph()
+	else:
+		reward_graph.visible = false
 	if view_train_info:
 		update_train_labels()
 		update_nn_labels()
@@ -43,3 +54,27 @@ func update_nn_labels() -> void:
 func update_label_view() -> void:
 	if Input.is_action_just_pressed("toggle_train_info"):
 		view_train_info = !view_train_info
+	if Input.is_action_just_pressed("toggle_graphs"):
+		view_graph = !view_graph
+	
+func update_reward_graph() -> void:
+	# 1. Initialize the plot the first time the function is called
+	if reward_graph and not reward_plot:
+		# 'add_plot_item' returns a PlotItem object, which we store to reference the plot later
+		reward_plot = reward_graph.add_plot_item("Recompensa Total", Color.YELLOW, 2.0)
+	
+	var current_ep = GlobalVars.current_episode
+	
+	# 2. Add the reward only if it's a new episode
+	if episode_rewards.size() <= current_ep:
+		var new_reward = GlobalVars.current_reward
+		episode_rewards.append(new_reward)
+	
+		# 3. Update the graph: clear the old points and add the new series
+		if reward_plot:
+			# Clear all points from the existing plot
+			reward_plot.remove_all()
+			
+			# Add all accumulated rewards as points again
+			for i in episode_rewards.size():
+				reward_plot.add_point(Vector2(i, episode_rewards[i]))

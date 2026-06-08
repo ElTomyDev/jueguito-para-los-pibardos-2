@@ -22,7 +22,7 @@ const HIT_HISTORY_SIZE = 5
 @export var attack_forced: int = 1
 
 @export_category("Movement Parameters")
-@export var max_speed: float = 320.0
+@export var max_speed: float = 500.0
 @export var acceleration_speed: float = 15.0 
 @export var deceleration_speed: float = 10.0
 
@@ -89,7 +89,7 @@ func update_boss(delta) -> void:
 	if GlobalVars.nn_outputs.has("shot_angle"):
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
 	
-	#_add_boss_noise()
+	_add_boss_noise()
 	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()
@@ -227,16 +227,16 @@ func _ball_attack_action(delta: float) -> void:
 
 func _add_boss_noise() -> void:
 	
-	var move_dir_noise = 0.2
-	var shot_angle_noise = 0.3
-	var action_noise = 0.1
+	var move_dir_noise = 0.3
+	var shot_angle_noise = 0.2
+	var action_noise = 0.05
 	# Ruido de exploración siempre activo (pequeño)
 	move_dir += Vector2(randf_range(-move_dir_noise, move_dir_noise), randf_range(-move_dir_noise, move_dir_noise))
 	move_dir = move_dir.clamp(Vector2(-1,-1), Vector2(1,1))
-	shot_angle += randf_range(-shot_angle_noise, shot_angle_noise) * PI
+	shot_angle += randf_range(-shot_angle_noise, shot_angle_noise)
 	shot_angle = clamp(shot_angle, -PI, PI)
 	if randf() < action_noise:
-		current_action = 1
+		current_action = 1 if current_action == 0 else 0
 
 func register_hit(hit: bool) -> void:
 	hit_history.append(1.0 if hit else 0.0)

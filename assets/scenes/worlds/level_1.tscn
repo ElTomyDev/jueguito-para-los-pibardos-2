@@ -10,41 +10,23 @@ size = Vector2(20, 659)
 size = Vector2(2096, 20)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_56x64"]
-size = Vector2(27.5, 650)
+size = Vector2(29.75, 650)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_j1tjx"]
-size = Vector2(2096, 20)
+size = Vector2(2096, 22)
 
 [node name="test" type="Node2D"]
 
 [node name="TrainData" parent="." instance=ExtResource("2_56x64")]
-z_index = 1
-
-[node name="NNLabels" parent="TrainData" index="1"]
-offset_left = 821.0
-offset_right = 861.0
-offset_bottom = 50.0
-
-[node name="BossProgressBar" parent="TrainData" index="2"]
-anchors_preset = 10
-anchor_left = 0.0
-anchor_right = 1.0
-offset_left = 473.0
-offset_right = 773.0
-offset_bottom = 41.0
-
-[node name="PlayerProgressBar" parent="TrainData" index="3"]
-offset_top = 589.0
-offset_bottom = 630.0
 
 [node name="SimulationManager" parent="." node_paths=PackedStringArray("player_spawn_point") instance=ExtResource("2_qbvmm")]
 player_spawn_point = NodePath("SpawnPlayer")
 
 [node name="SpawnPlayer" parent="SimulationManager" index="0"]
-position = Vector2(491, 443)
+position = Vector2(677, 539)
 
 [node name="SpawnBoss" parent="SimulationManager" index="1"]
-position = Vector2(781, 316)
+position = Vector2(108, 434)
 
 [node name="MapLimits" type="StaticBody2D" parent="." groups=["World"]]
 collision_layer = 8
@@ -59,12 +41,11 @@ position = Vector2(1028, 650)
 shape = SubResource("RectangleShape2D_qbvmm")
 
 [node name="CollisionShape2D3" type="CollisionShape2D" parent="MapLimits"]
-position = Vector2(1040, 325)
+position = Vector2(1038.875, 325)
 shape = SubResource("RectangleShape2D_56x64")
 
 [node name="CollisionShape2D4" type="CollisionShape2D" parent="MapLimits"]
-position = Vector2(1028, 218)
+position = Vector2(1028, -11)
 shape = SubResource("RectangleShape2D_j1tjx")
 
-[editable path="TrainData"]
 [editable path="SimulationManager"]

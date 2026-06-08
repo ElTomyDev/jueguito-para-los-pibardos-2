@@ -34,8 +34,10 @@ var player_id: int = 0
 var bullet_from_group: StringName = "Players" # Grupo al que pertenece la bala
 var bullet_to_group: StringName = "Boss" # Target de la bala
 
-var auto_vel: float = 1300.0
+var auto_vel: float = 1800.0
 var auto_dir: int = 1
+var auto_move_timer: int = 0
+var auto_jump_timer: int = 0
 
 func _ready() -> void:
 	init_player()
@@ -93,10 +95,32 @@ func _auto_shot() -> void:
 			))
 
 func _auto_move(delta: float) -> void:
-	if GlobalVars.current_episode >= 600:
-		if GlobalVars.current_step % 300 == 0:
-			auto_dir = -1*(auto_dir)
-		self.velocity.x = auto_dir * (auto_vel * delta)
+	var rand_move = randi_range(50, 400)
+	var rand_jump = randi_range(200, 400)
+	
+	if GlobalVars.current_step >= 200:
+		if auto_move_timer == rand_move:
+			rand_move = randi_range(50, 400)
+			auto_move_timer = 0
+		if auto_jump_timer == rand_jump:
+			rand_jump = randi_range(200, 400)
+			auto_jump_timer = 0
+
+		if GlobalVars.current_step % rand_move == 0:
+			auto_dir = -auto_dir
+		velocity.x = auto_dir * (auto_vel * delta)
+		if GlobalVars.current_step % rand_jump == 0:
+			velocity.y = randf_range(-200, 200)
+			
+		auto_move_timer += 1
+		auto_jump_timer += 1
+	else:
+		if GlobalVars.current_step % 200 == 0:
+			auto_dir = -auto_dir
+		velocity.x = auto_dir * (auto_vel * delta)
+		if GlobalVars.current_step % 50 == 0:
+			velocity.y = randf_range(-200, 200)
+		
 
 func _on_damage_area_body_entered(bullet: Bullet) -> void:
 	if is_instance_valid(bullet):

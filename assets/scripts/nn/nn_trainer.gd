@@ -1,15 +1,15 @@
 extends RefCounted
 class_name NNTrainer
 
-var lr_actor: float = 0.0001   # Learning rate para el Actor
-var lr_critic: float = 0.0005    # Learning rate para el Crítico (puede ser mayor)
+var lr_actor: float = 0.0002   # Learning rate para el Actor
+var lr_critic: float = 0.0005   # Learning rate para el Crítico (puede ser mayor)
 var gamma: float = 0.99        # Factor de descuento para recompensas futuras
 
 # Regularización y estabilidad
 const MAX_GRAD: float = 1.0
 const WEIGHT_DECAY: float = 0.000001   # L2 decay
-const WEIGHT_CLIP_MIN: float = -1.0   # Rango seguro para pesos
-const WEIGHT_CLIP_MAX: float = 1.0
+const WEIGHT_CLIP_MIN: float = -10.0   # Rango seguro para pesos
+const WEIGHT_CLIP_MAX: float = 10.0
 
 func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictionary, reward: float, done: bool, action_taken: int) -> void:
 	var v_s: float = state_act["critic_value"]
@@ -60,9 +60,9 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	for j in range(nn.hidden_size):
 		var grad = lr_critic * d_critic * state_act["hidden"][j]
 		nn.W_critic[0][j] = nn.W_critic[0][j] * (1.0 - WEIGHT_DECAY) - grad
-		nn.W_critic[0][j] = clamp(nn.W_critic[0][j], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
+		#nn.W_critic[0][j] = clamp(nn.W_critic[0][j], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 	nn.b_critic[0] = nn.b_critic[0] * (1.0 - WEIGHT_DECAY) - lr_critic * d_critic
-	nn.b_critic[0] = clamp(nn.b_critic[0], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
+	#nn.b_critic[0] = clamp(nn.b_critic[0], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 	
 	# ---------------------------------------------
 	# 4. Actualizar pesos del Actor (con lr_actor)
@@ -71,9 +71,9 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 		for j in range(nn.hidden_size):
 			var grad = lr_actor * d_actor[i] * state_act["hidden"][j]
 			nn.W_actor[i][j] = nn.W_actor[i][j] * (1.0 - WEIGHT_DECAY) - grad
-			nn.W_actor[i][j] = clamp(nn.W_actor[i][j], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
+			#nn.W_actor[i][j] = clamp(nn.W_actor[i][j], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 		nn.b_actor[i] = nn.b_actor[i] * (1.0 - WEIGHT_DECAY) - lr_actor * d_actor[i]
-		nn.b_actor[i] = clamp(nn.b_actor[i], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
+		#nn.b_actor[i] = clamp(nn.b_actor[i], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 	
 	# ---------------------------------------------
 	# 5. Actualizar pesos de la capa oculta compartida (con lr_actor)
@@ -82,7 +82,7 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 		for j in range(nn.input_size):
 			var grad = lr_actor * d_hidden[i] * state_act["inputs"][j]
 			nn.W1[i][j] = nn.W1[i][j] * (1.0 - WEIGHT_DECAY) - grad
-			nn.W1[i][j] = clamp(nn.W1[i][j], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
+			#nn.W1[i][j] = clamp(nn.W1[i][j], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 		nn.b1[i] = nn.b1[i] * (1.0 - WEIGHT_DECAY) - lr_actor * d_hidden[i]
-		nn.b1[i] = clamp(nn.b1[i], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
+		#nn.b1[i] = clamp(nn.b1[i], WEIGHT_CLIP_MIN, WEIGHT_CLIP_MAX)
 	

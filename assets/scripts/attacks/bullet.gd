@@ -3,7 +3,7 @@ class_name Bullet
 
 var bullet_color: Color = Color.RED
 
-var speed: float= 300.0
+var speed: float= 800.0
 var life_time: float
 var dir_to_mirror: Vector2 = Vector2.ZERO
 var damage: float

@@ -6,11 +6,11 @@ var viewport_size: Vector2
 @export var boss                : PackedScene
 @export var player_spawn_point  : Node2D
 @export var boss_spawn_point    : Node2D
-@export var random_spawns       : bool = false
+@export var random_spawns       : bool = true
 @export var load_best_model     : bool = false
 @export var is_new_train        : bool = false
 
-# ---- Rewards unificados ----
+# ---- Rewards unificados ----+
 # Terminales
 const REWARD_WIN             : float =  100.0
 const REWARD_LOSE            : float = -100.0
@@ -19,7 +19,7 @@ const REWARD_FAST_LOSE_BONUS : float = -0.1   # por step restante al perder ráp
 
 # Fase 0 — Movimiento
 const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
-const R_STATIC               : float = -0.3   # por estar quieto
+const R_STATIC               : float = -0.2   # por estar quieto
 
 # Fase 1 — Proximidad
 const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)
@@ -57,7 +57,7 @@ var current_episode_rewards: Array = []
 var is_resetting: bool = false
 
 func _ready() -> void:
-	Engine.time_scale = 2.0
+	Engine.time_scale = 1.0
 	_load_train_data()
 	_init_nn_core()
 	_spawn_entities()
@@ -326,22 +326,31 @@ func _spawn_entities() -> void:
 	var player_instance = player.instantiate() as PlayerController
 	var boss_instance = boss.instantiate() as BossController
 	viewport_size = get_viewport().get_visible_rect().size
+	
 	if !random_spawns:
 		player_instance.global_position = player_spawn_point.global_position
 		boss_instance.global_position = boss_spawn_point.global_position
 	else:
-		player_instance.global_position = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
-		boss_instance.global_position = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
-	
+		var margin: float = 200.0  # distancia mínima en píxeles
+		var max_attempts: int = 20
+		var player_pos: Vector2
+		var boss_pos: Vector2
+		for i in range(max_attempts):
+			player_pos = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
+			boss_pos = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
+			if player_pos.distance_to(boss_pos) >= margin:
+				break
+		player_instance.global_position = player_pos
+		boss_instance.global_position = boss_pos
+
 	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)
 
 func _can_episode_end() -> bool:
 	# Validación de seguridad por si el Boss es nulo en el frame actual
-	if not is_instance_valid(GlobalVars.boss): 
-		return true
-	if not is_instance_valid(GlobalVars.players[0]): 
-		return true
+	if GlobalVars.players.is_empty(): return true
+	if not is_instance_valid(GlobalVars.boss): return true
+	if not is_instance_valid(GlobalVars.players[0]): return true
 	var result = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE or GlobalVars.boss.health <= 0.0 or GlobalVars.players[0].health <= 0.0
 	return result
 
