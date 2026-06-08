@@ -1,8 +1,8 @@
 extends RefCounted
 class_name NNTrainer
 
-var lr_actor: float = 0.0001   # Learning rate para el Actor
-var lr_critic: float = 0.0005   # Learning rate para el Crítico (puede ser mayor)
+var lr_actor: float = 0.00005   # Learning rate para el Actor
+var lr_critic: float = 0.0001   # Learning rate para el Crítico (puede ser mayor)
 var gamma: float = 0.99        # Factor de descuento para recompensas futuras
 
 # Regularización y estabilidad
@@ -19,7 +19,7 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	# TD Error (Ventaja)
 	var td_target: float = reward + gamma * v_next
 	var advantage: float = td_target - v_s
-	advantage = clamp(advantage, -10.0, 10.0)
+	advantage = clamp(advantage, -2.0, 2.0)
 	
 	# ---------------------------------------------
 	# 1. Calcular gradientes del Critic y del Actor

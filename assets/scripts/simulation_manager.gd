@@ -10,12 +10,13 @@ var viewport_size: Vector2
 @export var load_best_model     : bool = false
 @export var is_new_train        : bool = false
 
+
 # ---- Rewards unificados ----+
 # Terminales
-const REWARD_WIN             : float =  100.0
-const REWARD_LOSE            : float = -100.0
-const REWARD_FAST_WIN_BONUS  : float =  0.2   # por step restante al ganar
-const REWARD_FAST_LOSE_BONUS : float = -0.1   # por step restante al perder rápido
+const REWARD_WIN             : float =  5.0
+const REWARD_LOSE            : float = -5.0
+const REWARD_FAST_WIN_BONUS  : float =  0.01   # por step restante al ganar
+const REWARD_FAST_LOSE_BONUS : float = -0.005   # por step restante al perder rápido
 
 # Fase 0 — Movimiento
 const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
@@ -26,12 +27,12 @@ const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)
 const R_TOO_FAR              : float = -0.2   # si supera MIN_DIST
 
 # Fase 2 — Disparo y puntería
-const R_AIM_MAX              : float =  0.5   # escala por ángulo (0 a 0.5)
-const R_DAMAGE_DEALT         : float =  2.0   # por HP quitado al jugador
-const R_DAMAGE_TAKEN         : float = -0.05  # por HP perdido (normalizado)
+const R_AIM_MAX              : float =  0.3   # escala por ángulo (0 a 0.5)
+const R_DAMAGE_DEALT         : float =  0.5   # por HP quitado al jugador
+const R_DAMAGE_TAKEN         : float = -0.02  # por HP perdido (normalizado)
 
 # Fase 3 — Esquive
-const R_DODGE_BULLET         : float =  0.08  # por alejarse de bala
+const R_DODGE_BULLET         : float =  0.05  # por alejarse de bala
 
 const MIN_PLAYER_DIST        : float = 400.0
 const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movimiento"
@@ -55,6 +56,7 @@ var last_dist_to_bullet: float = 0.0
 var current_episode_rewards: Array = []
 
 var is_resetting: bool = false
+var _last_phase: int = -1
 
 func _ready() -> void:
 	Engine.time_scale = 2.0
@@ -70,6 +72,11 @@ func _physics_process(_delta: float) -> void:
 	 # Esperamos a que ambas entidades estén registradas antes de simular
 	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
 		return
+	var current_phase = _get_current_phase()
+	if current_phase != _last_phase:
+		_last_phase = current_phase
+		_reset_critic_on_phase_change()
+		print("Cambio a fase ", current_phase, " — critic reseteado")
 	
 	GlobalVars.current_step += 1
 	
@@ -276,6 +283,14 @@ func _check_and_save_best() -> void:
 		persistence.save_network(nn, GlobalConst.SAVE_BEST_MODEL_PATH)
 		print("Nuevo mejor promedio (últimos ", GlobalConst.REWARD_WINDOW, " episodios): ", GlobalVars.best_avg_reward, " en episodio ", GlobalVars.best_avg_episode)
 
+
+func _reset_critic_on_phase_change() -> void:
+	nn.W_critic = nn._random_matrix(
+		nn.critic_output_size, 
+		nn.hidden_size, 
+		sqrt(2.0 / nn.hidden_size)
+	)
+	nn.b_critic = nn._zero_vector(nn.critic_output_size)
 # --------
 # Utilidad
 # --------
