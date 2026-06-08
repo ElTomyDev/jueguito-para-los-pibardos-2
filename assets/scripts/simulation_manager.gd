@@ -10,6 +10,9 @@ var viewport_size: Vector2
 @export var load_best_model     : bool = false
 @export var is_new_train        : bool = false
 
+var reward_mean: float = 0.0
+var reward_var: float = 1.0
+var reward_count: int = 0
 
 # ---- Rewards unificados ----+
 # Terminales
@@ -40,9 +43,10 @@ const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movi
 # ---------------
 #  Nodos de la NN
 # ---------------
-var nn          : NeuralNetwork
-var trainer     : NNTrainer
-var persistence : NNPersistence
+var nn           : NeuralNetwork
+var trainer      : NNTrainer
+var persistence  : NNPersistence
+var replay_buffer: ReplayBuffer
 
 # Variables para guardar el historial del último paso e iterar el algoritmo
 var last_state_activation: Dictionary = {}
@@ -53,8 +57,6 @@ var last_angle_error: float = 0.0
 var last_dist_to_player: float = 0.0
 var last_dist_to_bullet: float = 0.0
 
-var current_episode_rewards: Array = []
-
 var is_resetting: bool = false
 var _last_phase: int = -1
 
@@ -63,6 +65,7 @@ func _ready() -> void:
 	_load_train_data()
 	_init_nn_core()
 	_spawn_entities()
+	_last_phase = _get_current_phase()
 
 func _physics_process(_delta: float) -> void:
 	# Si estamos en medio de un reset, o las entidades aún no se registraron en el árbol, ignoramos el frame.
@@ -72,6 +75,7 @@ func _physics_process(_delta: float) -> void:
 	 # Esperamos a que ambas entidades estén registradas antes de simular
 	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
 		return
+		
 	var current_phase = _get_current_phase()
 	if current_phase != _last_phase:
 		_last_phase = current_phase
@@ -96,14 +100,23 @@ func _physics_process(_delta: float) -> void:
 	else:
 		action_taken = 1 if current_activation["actor_outputs"][3] >= 0.2 else 0
 	# 3. Calcular la recompensa del paso actual de entrenamiento
-	var reward: float = _calculate_reward()
+	var reward: float = _normalize_reward(_calculate_reward())
 	GlobalVars.current_reward += reward
-	current_episode_rewards.append(reward)
 	
-	# 4. Entrenar usando el paso anterior completo (si existe)
 	if not last_state_activation.is_empty():
-		trainer.train_step(nn, last_state_activation, current_activation, reward, false, last_action_taken)
+		replay_buffer.add(last_state_activation, current_activation, reward, false, last_action_taken)
 
+	if replay_buffer.is_ready(64):
+		var batch = replay_buffer.sample(32)
+		for transition in batch:
+			trainer.train_step(
+				nn,
+				transition["state"],
+				transition["next"],
+				transition["reward"],
+				transition["done"],
+				transition["action"]
+			)
 	# Guardar estado actual como referencia histórica para el próximo cuadro
 	last_state_activation = _duplicate_activation(current_activation)
 	last_action_taken = action_taken
@@ -207,8 +220,6 @@ func _handle_episode_end() -> void:
 	
 	print("Fin del Episodio: ", GlobalVars.current_episode, " | Recompensa Acumulada: ", GlobalVars.current_reward)
 	
-	# Guardar las recompensas de este episodio en CSV
-	#_save_episode_rewards_to_csv(GlobalVars.current_episode, current_episode_rewards)
 	_check_and_save_best()
 	_save_train_data()
 	
@@ -308,7 +319,6 @@ func _reset_episode() -> void:
 	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
 	
 	last_state_activation.clear()
-	current_episode_rewards.clear()
 	last_angle_error = 0.0
 	last_dist_to_player = 0.0
 	last_dist_to_bullet = 0.0
@@ -329,6 +339,7 @@ func _init_nn_core() -> void:
 	nn = NeuralNetwork.new()
 	trainer = NNTrainer.new()
 	persistence = NNPersistence.new()
+	replay_buffer = ReplayBuffer.new(512)
 	
 	# Intentar cargar pesos previos
 	if load_best_model:
@@ -424,3 +435,12 @@ func _save_episode_rewards_to_csv(episode: int, rewards: Array) -> void:
 	
 	file.close()
 	print("Recompensas del episodio ", episode, " guardadas en CSV.")
+
+func _normalize_reward(r: float) -> float:
+	reward_count += 1
+	var delta = r - reward_mean
+	reward_mean += delta / reward_count
+	var delta2 = r - reward_mean
+	reward_var = reward_var + (delta * delta2 - reward_var) / reward_count
+	var std = sqrt(max(reward_var, 0.01))
+	return clamp(r / std, -5.0, 5.0)
