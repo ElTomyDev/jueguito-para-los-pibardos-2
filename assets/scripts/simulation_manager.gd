@@ -84,7 +84,8 @@ func _physics_process(_delta: float) -> void:
 	var epsilon: float = max(0.05, 0.3 - GlobalVars.current_episode * 0.0001)
 	var action_taken: int
 	if randf() < epsilon:
-		action_taken = 1  # forzar disparo para explorar
+		GlobalVars.nn_outputs["move_dir"] = [randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)]
+		action_taken = randi() % 2
 	else:
 		action_taken = 1 if current_activation["actor_outputs"][3] >= 0.5 else 0
 	# 3. Calcular la recompensa del paso actual de entrenamiento
@@ -126,11 +127,8 @@ func _calculate_reward() -> float:
 	var p = GlobalVars.players[0] if not GlobalVars.players.is_empty() else null
 	
 	# --- FASE 0+: Movimiento base (siempre activo) ---
-	var speed = b.velocity.length()
-	if speed < MIN_SPEED_THRESHOLD:
-		reward += R_STATIC
-	else:
-		reward += R_MOVING
+	var speed_ratio = b.velocity.length() / b.max_speed
+	reward += lerp(R_STATIC, R_MOVING, speed_ratio)
 	
 	# --- FASE 1+: Proximidad al jugador ---
 	if phase >= 1 and is_instance_valid(p):

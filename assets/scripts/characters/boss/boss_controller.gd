@@ -89,7 +89,7 @@ func update_boss(delta) -> void:
 	if GlobalVars.nn_outputs.has("shot_angle"):
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
 	
-	_add_boss_noise()
+	#_add_boss_noise()
 	
 	near_bullet = _get_near_bullet()
 	near_player = _get_near_player()

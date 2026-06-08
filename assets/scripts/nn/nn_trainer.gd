@@ -28,9 +28,12 @@ func train_step(nn: NeuralNetwork, state_act: Dictionary, next_state_act: Dictio
 	
 	# Gradientes para el Actor
 	var d_actor: Array = [0.0, 0.0, 0.0, 0.0]
+	
 	for i in range(3):
-		var tanh_grad: float = 1.0 - (state_act["actor_outputs"][i] * state_act["actor_outputs"][i])
-		d_actor[i] = -advantage * tanh_grad
+		# Empuja el output en la dirección que mejoró la recompensa
+		var action_val = state_act["actor_outputs"][i]
+		var tanh_grad = 1.0 - action_val * action_val
+		d_actor[i] = -advantage * tanh_grad * sign(action_val) if abs(action_val) > 0.01 else -advantage * tanh_grad
 	
 	var current_action_prob: float = state_act["actor_outputs"][3]
 	var target_action: float = float(action_taken)

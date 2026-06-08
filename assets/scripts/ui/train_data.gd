@@ -61,7 +61,7 @@ func update_reward_graph() -> void:
 	# 1. Initialize the plot the first time the function is called
 	if reward_graph and not reward_plot:
 		# 'add_plot_item' returns a PlotItem object, which we store to reference the plot later
-		reward_plot = reward_graph.add_plot_item("Recompensa Total", Color.YELLOW, 2.0)
+		reward_plot = reward_graph.add_plot_item("", Color.YELLOW, 1.0)
 	
 	var current_ep = GlobalVars.current_episode
 	
