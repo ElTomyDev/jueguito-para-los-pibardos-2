@@ -57,6 +57,8 @@ var last_angle_error: float = 0.0
 var last_dist_to_player: float = 0.0
 var last_dist_to_bullet: float = 0.0
 
+var _train_frame_counter: int = 0
+
 var is_resetting: bool = false
 var _last_phase: int = -1
 
@@ -105,9 +107,9 @@ func _physics_process(_delta: float) -> void:
 	
 	if not last_state_activation.is_empty():
 		replay_buffer.add(last_state_activation, current_activation, reward, false, last_action_taken)
-
-	if replay_buffer.is_ready(64):
-		var batch = replay_buffer.sample(32)
+	_train_frame_counter +=1
+	if _train_frame_counter % 2 == 0 and replay_buffer.is_ready(64):
+		var batch = replay_buffer.sample(16)
 		for transition in batch:
 			trainer.train_step(
 				nn,

@@ -21,15 +21,22 @@ var reward_plot: PlotItem
 var view_graph: bool = true
 var view_train_info: bool = true
 
+var update_rate: int = 10
+
+var _last_plotted_episode: int = -1
+var _ui_frame_counter: int = 0
+
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	update_label_view()
+	_ui_frame_counter += 1
 	if view_graph:
 		reward_graph.visible = true
 		update_reward_graph()
 	else:
 		reward_graph.visible = false
-	if view_train_info:
+	
+	if view_train_info and _ui_frame_counter % 6 == 0:
 		update_train_labels()
 		update_nn_labels()
 
@@ -68,17 +75,17 @@ func update_reward_graph() -> void:
 		if Input.is_action_just_pressed("g_down"):
 			reward_graph.y_min += 10
 			reward_graph.y_max -= 10
-	# 1. Initialize the plot the first time the function is called
 	if reward_graph and not reward_plot:
-		# 'add_plot_item' returns a PlotItem object, which we store to reference the plot later
 		reward_plot = reward_graph.add_plot_item("", Color.YELLOW)
-	
-	if not GlobalVars.episode_rewards.is_empty():
-		# 3. Update the graph: clear the old points and add the new series
-		if reward_plot:
-			# Clear all points from the existing plot
-			reward_plot.remove_all()
-			
-			# Add all accumulated rewards as points again
-			for i in GlobalVars.episode_rewards.size():
-				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+		# Carga inicial de todos los puntos existentes
+		for i in GlobalVars.episode_rewards.size():
+			reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+		_last_plotted_episode = GlobalVars.episode_rewards.size() - 1
+		return
+		
+	# Solo agrega los puntos nuevos
+	var current_size = GlobalVars.episode_rewards.size()
+	if current_size > 0 and _last_plotted_episode < current_size - 1:
+		for i in range(_last_plotted_episode + 1, current_size):
+			reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+		_last_plotted_episode = current_size - 1

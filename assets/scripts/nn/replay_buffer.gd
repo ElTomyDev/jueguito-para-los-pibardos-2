@@ -24,14 +24,13 @@ func add(state_act: Dictionary, next_state_act: Dictionary, reward: float, done:
 
 func sample(batch_size: int) -> Array:
 	var n = min(batch_size, buffer.size())
-	var indices = []
-	while indices.size() < n:
-		var idx = randi() % buffer.size()
-		if not idx in indices:
-			indices.append(idx)
+	var seen = {}
 	var batch = []
-	for i in indices:
-		batch.append(buffer[i])
+	while batch.size() < n:
+		var idx = randi() % buffer.size()
+		if not seen.has(idx):
+			seen[idx] = true
+			batch.append(buffer[idx])
 	return batch
 
 func size() -> int:

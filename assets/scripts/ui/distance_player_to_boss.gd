@@ -1,12 +1,14 @@
 extends Control
 
-
+var _redraw_counter: int = 0
+	
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
+	_redraw_counter += 1
 	if is_instance_valid(GlobalVars.boss):
 		_update_distance_label($ToPlayer, GlobalVars.boss.near_player)
-#	_update_distance_label($ToBullet, GlobalVars.boss.near_bullet)
-	queue_redraw()
+	if _redraw_counter % 3 == 0:
+		queue_redraw()
 
 func  _draw() -> void:
 	if is_instance_valid(GlobalVars.boss) and is_instance_valid(GlobalVars.boss.near_player):
