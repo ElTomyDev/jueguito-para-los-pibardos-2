@@ -19,7 +19,7 @@ const REWARD_FAST_LOSE_BONUS : float = -0.1   # por step restante al perder ráp
 
 # Fase 0 — Movimiento
 const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
-const R_STATIC               : float = -0.2   # por estar quieto
+const R_STATIC               : float = -0.35   # por estar quieto
 
 # Fase 1 — Proximidad
 const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)

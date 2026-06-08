@@ -1,5 +1,5 @@
 {
-	"best_avg_episode": 0,
-	"best_avg_reward": -1000000000.0,
-	"episode": 0
+	"best_avg_episode": 21,
+	"best_avg_reward": 10.36,
+	"episode": 260
 }
