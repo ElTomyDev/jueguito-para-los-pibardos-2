@@ -41,10 +41,10 @@ offset_bottom = 630.0
 player_spawn_point = NodePath("SpawnPlayer")
 
 [node name="SpawnPlayer" parent="SimulationManager" index="0"]
-position = Vector2(92, 244)
+position = Vector2(491, 443)
 
 [node name="SpawnBoss" parent="SimulationManager" index="1"]
-position = Vector2(689, 115)
+position = Vector2(781, 316)
 
 [node name="MapLimits" type="StaticBody2D" parent="." groups=["World"]]
 collision_layer = 8
@@ -63,7 +63,7 @@ position = Vector2(1040, 325)
 shape = SubResource("RectangleShape2D_56x64")
 
 [node name="CollisionShape2D4" type="CollisionShape2D" parent="MapLimits"]
-position = Vector2(1028, -10)
+position = Vector2(1028, 218)
 shape = SubResource("RectangleShape2D_j1tjx")
 
 [editable path="TrainData"]

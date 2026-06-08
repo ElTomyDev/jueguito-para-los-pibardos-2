@@ -22,7 +22,7 @@ const HIT_HISTORY_SIZE = 5
 @export var attack_forced: int = 1
 
 @export_category("Movement Parameters")
-@export var max_speed: float = 230.0
+@export var max_speed: float = 320.0
 @export var acceleration_speed: float = 15.0 
 @export var deceleration_speed: float = 10.0
 
