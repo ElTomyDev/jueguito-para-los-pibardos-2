@@ -4,7 +4,7 @@ class_name NNClient
 var _socket: PacketPeerUDP
 var _host: String = "127.0.0.1"
 var _port: int = 9999
-var _timeout_ms: int = 50
+var _timeout_ms: int = 5000
 
 func _init() -> void:
 	_socket = PacketPeerUDP.new()

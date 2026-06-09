@@ -12,9 +12,9 @@ ACTOR_OUT = 4
 
 GAMMA = 0.99
 
-LR_SHARED = 0.0005  # Para W1 (capa compartida)
+LR_SHARED = 0.0002  # Para W1 (capa compartida)
 LR_ACTOR = 0.0002   # Para W2_actor y W_actor
-LR_CRITIC = 0.0005  # Para W_critic
+LR_CRITIC = 0.00005  # Para W_critic
 
 ENTROPY_BETA = 0.01
 MAX_GRAD = 1.0
@@ -296,6 +296,7 @@ while True:
             "shot_angle": noisy_angle,
             "action": action,
         }
+        sock.sendto(json.dumps(resp).encode(), addr)
 
     elif msg["type"] == "episode_end":
         reward = msg.get("reward", 0.0)

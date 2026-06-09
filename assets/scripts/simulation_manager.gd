@@ -28,10 +28,10 @@ const R_TOO_FAR              : float = -0.2   # si supera MIN_DIST
 # Fase 2 — Disparo y puntería
 const R_AIM_MAX              : float =  0.3   # escala por ángulo (0 a 0.5)
 const R_DAMAGE_DEALT         : float =  0.5   # por HP quitado al jugador
-const R_DAMAGE_TAKEN         : float = -0.08  # por HP perdido (normalizado)
+const R_DAMAGE_TAKEN         : float = -0.3   # por HP perdido (normalizado)
 
 # Fase 3 — Esquive
-const R_DODGE_BULLET         : float =  0.05  # por alejarse de bala
+const R_DODGE_BULLET         : float =  0.1  # por alejarse de bala
 
 const MIN_PLAYER_DIST        : float = 400.0
 const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movimiento"
