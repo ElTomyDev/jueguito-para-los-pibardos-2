@@ -160,15 +160,12 @@ func _handle_episode_end() -> void:
 	is_resetting = true
 	var final_reward: float = 0.0
 	var steps_remaining = GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step
-
-	if GlobalVars.players.is_empty():
-		# Boss ganó
+	
+	if GlobalVars.players.is_empty(): # Si boss ganó
 		final_reward = REWARD_WIN + steps_remaining * REWARD_FAST_WIN_BONUS
-	elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
-		# Boss perdió
+	elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0: # Si boss perdió 
 		final_reward = REWARD_LOSE + steps_remaining * REWARD_FAST_LOSE_BONUS
-	else:
-		# Timeout — se trata como derrota
+	else: # Timeout. se trata como derrota
 		final_reward = REWARD_LOSE
 	
 	nn_client.notify_episode_end(
@@ -181,6 +178,7 @@ func _handle_episode_end() -> void:
 	
 	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
 	GlobalVars.current_episode += 1
+	
 	_reset_episode()
 	_reset_health_tracking()
 
@@ -220,12 +218,6 @@ func _get_inputs_for_nn() -> Array:
 	
 	return inputs
 
-func _update_nn_outputs(output: Array) -> void:
-	if not is_instance_valid(GlobalVars.boss): return
-	GlobalVars.nn_outputs["move_dir"] = [output[0], output[1]]
-	GlobalVars.nn_outputs["shot_angle"] = output[2]
-	GlobalVars.nn_outputs["action"] = output[3]
-
 # --------
 # Utilidad
 # --------
@@ -233,7 +225,6 @@ func _reset_episode() -> void:
 	# Elimina y resetea las balas.
 	for bullet in GlobalVars.bullets:
 		if is_instance_valid(bullet): bullet.queue_free()
-		
 	
 	# Elimina y resetea los jugadores.
 	for p in GlobalVars.players:
@@ -255,10 +246,9 @@ func _reset_episode() -> void:
 	GlobalVars.nn_outputs["move_dir"] = [0.0, 0.0]
 	GlobalVars.nn_outputs["shot_angle"] = 0.0
 	GlobalVars.nn_outputs["action"] = 0
-	_spawn_entities() # Agrega devuelta las entidades.
+	_spawn_entities()
 
 func _init_nn_core() -> void:
-	# Instanciar el Core de Inteligencia Artificial
 	nn_client = NNClient.new()
 
 func _spawn_entities() -> void:
@@ -313,42 +303,6 @@ func _save_train_data() -> void:
 		'episodes_rewards': GlobalVars.episode_rewards
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)
-
-func _duplicate_activation(act: Dictionary) -> Dictionary:
-	var dup = {}
-	for key in act.keys():
-		if act[key] is Array:
-			dup[key] = act[key].duplicate()
-		else:
-			dup[key] = act[key]
-	return dup
-
-func _save_episode_rewards_to_csv(episode: int, rewards: Array) -> void:
-	
-	# Abrir archivo en modo lectura/escritura para añadir líneas
-	var file = FileAccess.open(GlobalConst.REWARD_CSV_PATH, FileAccess.READ_WRITE)
-	if file == null:
-		# Si no existe, crearlo y escribir cabecera
-		file = FileAccess.open(GlobalConst.REWARD_CSV_PATH, FileAccess.WRITE)
-		if file:
-			file.store_line("episode,step,reward")
-			file.close()
-		file = FileAccess.open(GlobalConst.REWARD_CSV_PATH, FileAccess.READ_WRITE)
-	
-	if file == null:
-		print("Error: No se pudo abrir el archivo CSV para guardar recompensas.")
-		return
-	
-	# Ir al final del archivo
-	file.seek_end()
-	
-	# Escribir cada paso del episodio
-	for step in range(rewards.size()):
-		var line = "%d,%d,%.6f\n" % [episode, step + 1, rewards[step]]
-		file.store_string(line)
-	
-	file.close()
-	print("Recompensas del episodio ", episode, " guardadas en CSV.")
 
 func _normalize_reward(r: float) -> float:
 	reward_count += 1
