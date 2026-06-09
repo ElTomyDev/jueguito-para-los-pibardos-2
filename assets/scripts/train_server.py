@@ -7,16 +7,16 @@ PORT = 9999
 
 INPUTS = 25
 HIDDEN = 128
-HIDDEN_ACTOR = 128
+HIDDEN_ACTOR = 64
 ACTOR_OUT = 4
 
-GAMMA = 0.99
+GAMMA = 0.95
 
 LR_SHARED = 0.0002  # Para W1 (capa compartida)
 LR_ACTOR = 0.0002   # Para W2_actor y W_actor
-LR_CRITIC = 0.00005  # Para W_critic
+LR_CRITIC = 0.0005  # Para W_critic
 
-ENTROPY_BETA = 0.01
+ENTROPY_BETA = 0.02
 MAX_GRAD = 1.0
 
 BEST_MODEL_PATH = "./assets/train_data/best_boss_brain.json"
@@ -29,13 +29,12 @@ best_avg_reward = -float("inf")
 episode_rewards = []
 
 
-def sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
+def sigmoid(x) -> float:
+    return 1.0 / (1.0 + np.exp(-x))
 
 
 def clip_grad(g):
     return np.clip(g, -MAX_GRAD, MAX_GRAD)
-
 
 class ActorCritic:
 
@@ -273,7 +272,11 @@ while True:
         state = nn.forward(x)
 
         p_shoot = state["shoot_prob"]
-        action  = 1 if np.random.rand() < p_shoot else 0
+        epsilon = msg.get("epsilon", 0.1)
+        if np.random.rand() < epsilon:
+            action = np.random.randint(0, 2)   # 0 o 1 aleatorio
+        else:
+            action = 1 if np.random.rand() < p_shoot else 0
         reward  = msg.get("reward", 0.0)
 
         if last_state is not None:
