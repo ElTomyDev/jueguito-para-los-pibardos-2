@@ -66,7 +66,6 @@ func _physics_process(_delta: float) -> void:
 	
 	GlobalVars.current_step += 1
 	
-	# Determinar acción discreta tomada por la red basados en umbral de probabilidad (0.5)
 	var current_inputs: Array = _get_inputs_for_nn()
 	var epsilon: float = max(0.05, 0.3 - GlobalVars.current_episode * 0.0001)
 	var reward: float = _normalize_reward(_calculate_reward())
@@ -78,10 +77,6 @@ func _physics_process(_delta: float) -> void:
 	GlobalVars.nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
 	GlobalVars.nn_outputs["action"]     = response.get("action", 0)
 	
-	if GlobalVars.boss.current_action == 1:
-		GlobalVars.shot_intents += 1
-	
-	# 5. Comprobar condiciones de fin del episodio
 	if _can_episode_end():
 		_handle_episode_end()
 
@@ -155,9 +150,7 @@ func _calculate_reward() -> float:
 	
 	return reward
 
-func _handle_episode_end() -> void:
-	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
-	is_resetting = true
+func _calculate_final_reward() -> float:
 	var final_reward: float = 0.0
 	var steps_remaining = GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step
 	
@@ -167,6 +160,13 @@ func _handle_episode_end() -> void:
 		final_reward = REWARD_LOSE + steps_remaining * REWARD_FAST_LOSE_BONUS
 	else: # Timeout. se trata como derrota
 		final_reward = REWARD_LOSE
+	return final_reward
+
+func _handle_episode_end() -> void:
+	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
+	is_resetting = true
+	
+	var final_reward: float = _calculate_final_reward()
 	
 	nn_client.notify_episode_end(
 		GlobalVars.current_episode,
