@@ -3,12 +3,14 @@ class_name BossController
 
 var viewport_size: Vector2 
 
+const MAX_BULLET_DETECTS: int = 4
 const HIT_HISTORY_SIZE = 5
 
 # Componentes mecánicos (asegurate de que los paths a los nodos hijos sean los correctos en tu escena)
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
 @onready var shot_attack: ShotAttack = $BossMechanics/ShotAttack as ShotAttack
+@onready var bullet_detector: Area2D = $BulletDetector as Area2D
 
 @export_category("Boss Stats")
 @export var max_health: float = 10000.0
@@ -44,7 +46,10 @@ var last_shot_impact: Vector2 = Vector2.ZERO
 
 var bullet_from_group: StringName = "Boss"
 var bullet_to_group: StringName = "Players"
-
+var bullets_detected: Array = []
+var bullets_positions: Array = []
+var bullets_velocity: Array = []
+var bullets_dist: Array = []
 # Referencias de entorno para los inputs de la simulación
 var near_player: PlayerController = null
 var near_bullet: Bullet = null
@@ -71,6 +76,15 @@ func init_boss() -> void:
 	if damage_area:
 		damage_area.setup(self)
 	
+	for _i in range(MAX_BULLET_DETECTS):
+		bullets_detected.append(null)
+	for _i in range(MAX_BULLET_DETECTS * 2):
+		bullets_positions.append(0.0)
+	for _i in range(MAX_BULLET_DETECTS * 2):
+		bullets_velocity.append(0.0)
+	for _i in range(MAX_BULLET_DETECTS):
+		bullets_dist.append(1.0)
+	
 	GlobalVars.boss = self
 
 func update_boss(delta) -> void:
@@ -90,9 +104,7 @@ func update_boss(delta) -> void:
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
 	
 	#_add_boss_noise()
-	
-	near_bullet = _get_near_bullet()
-	near_player = _get_near_player()
+	update_bullets_norm_info()
 	
 	_update_action(delta)
 	move_and_slide()
@@ -102,23 +114,14 @@ func update_boss(delta) -> void:
 	global_position.y = clamp(global_position.y, 0.0, viewport_size.y)
 
 func get_inputs() -> Array:	
-	var near_bullet_pos = Vector2.ZERO
 	var dist_to_player = 1.0
-	var dist_to_bullet = 1.0
 	var angle_to_player = 0.0
 	var player_vel = Vector2.ZERO
 	var rel_vel = Vector2.ZERO
-	var near_bullet_vel = Vector2.ZERO
 	var time_since_last_shot = 1.0
-	
-	if is_instance_valid(near_bullet):
-		near_bullet_pos = near_bullet.global_position
 	
 	if is_instance_valid(near_player):
 		dist_to_player = global_position.distance_to(near_player.global_position) / viewport_size.length()
-	
-	if is_instance_valid(near_bullet):
-		dist_to_bullet = global_position.distance_to(near_bullet.global_position) / viewport_size.length()
 	
 	if is_instance_valid(near_player):
 		var to_player = (near_player.global_position - global_position).angle()
@@ -127,9 +130,6 @@ func get_inputs() -> Array:
 	
 	if is_instance_valid(near_player):
 		rel_vel = near_player.velocity - velocity
-	
-	if is_instance_valid(near_bullet):
-		near_bullet_vel = near_bullet.velocity.normalized()
 	
 	if shot_attack.last_shot_step > 0:
 		time_since_last_shot = (GlobalVars.current_step - shot_attack.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE)
@@ -140,15 +140,12 @@ func get_inputs() -> Array:
 	return [
 		self.global_position.x / viewport_size.x, # Posicion del jefe en X
 		self.global_position.y / viewport_size.y, # Posicion del jefe en X
-		near_bullet_pos.x / viewport_size.x, # Posicion de la bala mar cercana en Y
-		near_bullet_pos.y / viewport_size.y, # Posicion de la bala mar cercana en Y
 		GlobalVars.shot_impact.x / viewport_size.x, # Ultimo impacto de bala en X
 		GlobalVars.shot_impact.y / viewport_size.y, # Ultimo impacto de bala en Y
 		self.velocity.x / max_speed, # Velocidad del jefe en X
 		self.velocity.y / max_speed, # Velocidad del jefe en Y
 		self.health / max_health, # Vida del jefe
 		clamp(dist_to_player, 0.0, 1.0), # Distancia al jugador mas cercano
-		clamp(dist_to_bullet, 0.0, 1.0), # Distancia a la bala mas cercana
 		angle_to_player, # Diferencia angular entre el jefe y el jugador
 		rel_vel.x / max_speed, # Velocidad relativa del jugador en X
 		rel_vel.y / max_speed,  # Velocidad relativa del jugador en Y
@@ -156,8 +153,9 @@ func get_inputs() -> Array:
 		player_vel.y, # Velocidad del jugador relativa al jefe Y
 		time_since_last_shot,
 		dist_to_center,
-		near_bullet_vel.x, # Velocidad de la bala mas cercana X
-		near_bullet_vel.y, # Velocidad de la bala mas cercana Y
+		bullets_dist,
+		bullets_positions,
+		bullets_velocity
 	]
 
 func dead_if_can() -> void:
@@ -181,21 +179,31 @@ func _get_near_player() -> PlayerController:
 				near = player
 	return near
 
-func _get_near_bullet() -> Bullet:
-	var bullets: Array = GlobalVars.bullets
-	if bullets.is_empty(): 
-		return null
-	var near: Bullet = null
+func update_bullets_norm_info():
+	bullets_positions.clear()
+	bullets_velocity.clear()
+	bullets_dist.clear()
+	
+	var bullets: Array = bullets_detected
 	var min_dist = INF
 	
 	for bullet in bullets:
-		if not is_instance_valid(bullet) or bullet.from_group == "Boss": 
-			continue
-		var dist = global_position.distance_to(bullet.global_position)
-		if dist < min_dist:
-			min_dist = dist
-			near = bullet
-	return near
+		if bullet:
+			bullets_positions.append([bullet.global_position.x / viewport_size.x, bullet.global_position.y / viewport_size.y])
+			
+			var vel = bullet.velocity
+			bullets_velocity.append([vel.x / bullet.speed, vel.y / bullet.speed])
+			
+			var bullet_dist = global_position.distance_to(bullet.global_position) 
+			bullets_dist.append(bullet_dist / viewport_size.length())
+			if bullet_dist < min_dist:
+				min_dist = bullet_dist
+				near_bullet = bullet
+		else:
+			bullets_positions.append_array([0.0, 0.0])
+			bullets_velocity.append_array([0.0, 0.0])
+			bullets_dist.append(1.0)
+			near_bullet = null
 
 func can_shot() -> bool:
 	return current_action == 1
@@ -248,3 +256,15 @@ func _on_damage_area_body_entered(bullet: Node2D) -> void:
 		if bullet.is_in_group("Bullets") and bullet.group_target == "Boss":
 			damage_area.apply_damage(bullet.damage)
 			bullet.delete_bullet()
+
+# Deteccion de balas
+func _on_bullet_detector_body_entered(bullet: Node2D) -> void:
+	if is_instance_valid(bullet):
+		if bullet.is_in_group("Bullets") and bullet.group_target == "Boss":
+			if len(bullets_detected) > MAX_BULLET_DETECTS:
+				bullets_detected.pop_front()
+			bullets_detected.append(bullet)
+func _on_bullet_detector_body_exited(bullet: Node2D) -> void:
+	if is_instance_valid(bullet):
+		if bullet.is_in_group("Bullets") and bullet.group_target == "Boss":
+			bullets_detected.insert(bullets_detected.find(bullet), null)

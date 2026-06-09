@@ -1,12 +1,6 @@
 extends Node
 
-const INPUTS: int = 25
-
-# Fases de entrenamiento
-const PHASE_1_START: int = 0    # Solo movimiento
-const PHASE_2_START: int = 200  # Acercarse al jugador
-const PHASE_3_START: int = 500  # Disparar y apuntar
-const PHASE_4_START: int = 600  # Esquivar balas
+const INPUTS: int = 49
 
 const MAX_STEP_FOR_EPISODE: int = 600
 

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://do24pdmmrhm74"]
+[gd_scene load_steps=9 format=3 uid="uid://do24pdmmrhm74"]
 
 [ext_resource type="Script" uid="uid://bslnh33d3sn7i" path="res://assets/scripts/characters/boss/boss_controller.gd" id="1_agbej"]
 [ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="2_e77qu"]
@@ -10,6 +10,9 @@
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_5dy75"]
 radius = 80.05623
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_r5g44"]
+radius = 238.03362
 
 [node name="BossController" type="CharacterBody2D" groups=["Boss"]]
 collision_layer = 2
@@ -42,5 +45,12 @@ script = ExtResource("5_5dy75")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
 shape = SubResource("CircleShape2D_5dy75")
 
+[node name="BulletDetector" type="Area2D" parent="."]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="BulletDetector"]
+shape = SubResource("CircleShape2D_r5g44")
+
 [connection signal="body_entered" from="DamageArea" to="." method="_on_damage_area_body_entered"]
 [connection signal="body_shape_entered" from="DamageArea" to="." method="_on_damage_area_body_shape_entered"]
+[connection signal="body_entered" from="BulletDetector" to="." method="_on_bullet_detector_body_entered"]
+[connection signal="body_exited" from="BulletDetector" to="." method="_on_bullet_detector_body_exited"]

@@ -12,26 +12,26 @@ var viewport_size: Vector2
 
 # ---- Rewards unificados ----+
 # Terminales
-const REWARD_WIN             : float =  100.0
-const REWARD_LOSE            : float = -100.0
+const REWARD_WIN             : float =  5.0
+const REWARD_LOSE            : float = -5.0
 const REWARD_FAST_WIN_BONUS  : float =  0.01   # por step restante al ganar
 const REWARD_FAST_LOSE_BONUS : float = -0.005   # por step restante al perder rápido
 
 # Fase 0 — Movimiento
-const R_MOVING               : float =  0.05   # por moverse (velocidad > umbral)
-const R_STATIC               : float = -0.1   # por estar quieto
+const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
+const R_STATIC               : float = -0.3   # por estar quieto
 
 # Fase 1 — Proximidad
-const R_CLOSENESS_MAX        : float =  0.3   # escala por cercanía (0 a 0.4)
-const R_TOO_FAR              : float = -0.1   # si supera MIN_DIST
+const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)
+const R_TOO_FAR              : float = -0.2   # si supera MIN_DIST
 
 # Fase 2 — Disparo y puntería
 const R_AIM_MAX              : float =  0.3   # escala por ángulo (0 a 0.5)
 const R_DAMAGE_DEALT         : float =  0.5   # por HP quitado al jugador
-const R_DAMAGE_TAKEN         : float = -0.15   # por HP perdido (normalizado)
+const R_DAMAGE_TAKEN         : float = -0.02   # por HP perdido (normalizado)
 
 # Fase 3 — Esquive
-const R_DODGE_BULLET         : float =  0.2  # por alejarse de bala
+const R_DODGE_BULLET         : float =  0.05  # por alejarse de bala
 
 const MIN_PLAYER_DIST        : float = 400.0
 const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movimiento"
@@ -106,11 +106,6 @@ func _calculate_reward() -> float:
 		var angle_diff = abs(wrapf(ideal_angle - b.shot_angle, -PI, PI))
 		var aim_reward = R_AIM_MAX * (1.0 - (angle_diff / PI))
 		reward += aim_reward
-		
-		# Bonus por disparo reciente (opcional, reducido)
-		var steps_since_shot = GlobalVars.current_step - b.shot_attack.last_shot_step
-		if steps_since_shot <= 2:
-			reward += aim_reward * 0.2   # antes era 0.5, ahora menos
 	
 	# Daño infligido (normalizado por max_health del jugador)
 	var current_hp = p.health
@@ -129,9 +124,7 @@ func _calculate_reward() -> float:
 		if last_dist_to_bullet > 0:
 			var dist_increase = b_dist - last_dist_to_bullet
 			if dist_increase > 0:
-				reward += R_DODGE_BULLET   # ya no se multiplica por el incremento
-			elif dist_increase < 0:
-				reward -= R_DODGE_BULLET * 0.5   # penalización menor si se acerca
+				reward += dist_increase * R_DODGE_BULLET
 		last_dist_to_bullet = b_dist
 	else:
 		last_dist_to_bullet = 0.0
