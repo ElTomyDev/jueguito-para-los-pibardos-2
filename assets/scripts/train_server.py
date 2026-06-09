@@ -7,14 +7,14 @@ PORT = 9999
 
 INPUTS = 25
 HIDDEN = 128
-HIDDEN_ACTOR = 64   # Capa exclusiva del Actor
+HIDDEN_ACTOR = 128
 ACTOR_OUT = 4
 
 GAMMA = 0.99
 
-LR_SHARED = 0.0003  # Para W1 (capa compartida)
-LR_ACTOR = 0.0005   # Para W2_actor y W_actor
-LR_CRITIC = 0.0003  # Para W_critic
+LR_SHARED = 0.0005  # Para W1 (capa compartida)
+LR_ACTOR = 0.0002   # Para W2_actor y W_actor
+LR_CRITIC = 0.0005  # Para W_critic
 
 ENTROPY_BETA = 0.01
 MAX_GRAD = 1.0
@@ -122,7 +122,7 @@ class ActorCritic:
         # Discreto: policy gradient + entropy
         p = np.clip(state["shoot_prob"], 1e-6, 1.0 - 1e-6)
         d_actor_raw[3] = -(action['discrete'] - p) * advantage
-        d_actor_raw[3] += ENTROPY_BETA * np.log(p / (1.0 - p)) * p * (1.0 - p)
+        d_actor_raw[3] -= ENTROPY_BETA * np.log(p / (1.0 - p)) * p * (1.0 - p)
 
         # Gradientes de W_actor
         grad_wa = clip_grad(np.outer(d_actor_raw, h2))
@@ -279,20 +279,23 @@ while True:
         if last_state is not None:
             nn.train_step(last_state, state, reward, False, last_action)
 
-        last_state  = state
+        # Generar acciones ruidosas (cliente las usará)
+        noisy_move_x = np.clip(float(state["move_x"]) + np.random.normal(0, 0.2), -1.0, 1.0)
+        noisy_move_y = np.clip(float(state["move_y"]) + np.random.normal(0, 0.2), -1.0, 1.0)
+        noisy_angle = np.clip(float(state["shot_angle"]) + np.random.normal(0, 0.1), -1.0, 1.0)
+
         last_action = {
             "discrete": action,
-            "move_x": float(state["move_x"]) + np.random.normal(0, 0.2),
-            "move_y": float(state["move_y"]) + np.random.normal(0, 0.2),
-            "shot_angle": float(state["shot_angle"]) + np.random.normal(0, 0.2),
+            "move_x": noisy_move_x,
+            "move_y": noisy_move_y,
+            "shot_angle": noisy_angle,
         }
 
         resp = {
-            "move_dir":   [float(state["move_x"]), float(state["move_y"])],
-            "shot_angle": float(state["shot_angle"]),
-            "action":     action,
+            "move_dir": [noisy_move_x, noisy_move_y],
+            "shot_angle": noisy_angle,
+            "action": action,
         }
-        sock.sendto(json.dumps(resp).encode(), addr)
 
     elif msg["type"] == "episode_end":
         reward = msg.get("reward", 0.0)

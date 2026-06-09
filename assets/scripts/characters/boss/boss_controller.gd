@@ -101,7 +101,7 @@ func update_boss(delta) -> void:
 	global_position.x = clamp(global_position.x, 0.0, viewport_size.x)
 	global_position.y = clamp(global_position.y, 0.0, viewport_size.y)
 
-func get_inputs() -> Array:
+func get_inputs() -> Array:	
 	var near_bullet_pos = Vector2.ZERO
 	var dist_to_player = 1.0
 	var dist_to_bullet = 1.0
