@@ -107,7 +107,10 @@ func _calculate_reward() -> float:
 		var ideal_angle = (p.global_position - b.global_position).angle()
 		var angle_diff = abs(wrapf(ideal_angle - b.shot_angle, -PI, PI))
 		reward += R_AIM_MAX * (1.0 - (angle_diff / PI))
-		last_angle_error = angle_diff
+		# Bonus extra solo cuando realmente dispara
+		var steps_since_shot = GlobalVars.current_step - b.shot_attack.last_shot_step
+		if steps_since_shot <= 2:  # Disparó en los últimos 2 frames
+			reward += R_AIM_MAX * (1.0 - (angle_diff / PI)) * 0.5
 	
 	# Daño infligido (normalizado por max_health del jugador)
 	var current_hp = p.health
