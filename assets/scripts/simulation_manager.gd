@@ -27,7 +27,7 @@ const R_TOO_FAR              : float = -0.2   # si supera MIN_DIST
 
 # Fase 2 — Disparo y puntería
 const R_AIM_MAX              : float =  0.3   # escala por ángulo (0 a 0.5)
-const R_DAMAGE_DEALT         : float =  0.5   # por HP quitado al jugador
+const R_DAMAGE_DEALT         : float =  1.5   # por HP quitado al jugador
 const R_DAMAGE_TAKEN         : float = -0.08  # por HP perdido (normalizado)
 
 # Fase 3 — Esquive

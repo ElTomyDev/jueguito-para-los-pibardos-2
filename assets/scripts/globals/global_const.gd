@@ -8,7 +8,7 @@ const PHASE_2_START: int = 200  # Acercarse al jugador
 const PHASE_3_START: int = 500  # Disparar y apuntar
 const PHASE_4_START: int = 600  # Esquivar balas
 
-const MAX_STEP_FOR_EPISODE: int = 600
+const MAX_STEP_FOR_EPISODE: int = 300
 
 const SAVE_MODEL_PATH: String = "res://assets/train_data/boss_brain.json"
 const SAVE_BEST_MODEL_PATH = "res://assets/train_data/boss_brain_best.json"

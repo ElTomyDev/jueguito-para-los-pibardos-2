@@ -94,99 +94,65 @@ class ActorCritic:
         }
 
     def train_step(self, state, next_state, reward, done, action) -> None:
-
-        # ------------------------------
-        # TD Error y Advantage
-        # ------------------------------
         value      = state["value"]
         next_value = 0.0 if done else next_state["value"]
         td_target  = reward + GAMMA * next_value
         advantage  = np.clip(td_target - value, -10.0, 10.0)
-        sigma = 0.5  
+        sigma = 0.5
 
         h  = state["h"]
         h2 = state["h2"]
 
-        # ------------------------------
-        # Gradientes del Critic
-        # (solo afecta W_critic y W1)
-        # ------------------------------
-        critic_error = value - td_target   # escalar
-        d_value      = critic_error        # derivada del MSE sin el 2x
+        # --- Critic ---
+        critic_error = value - td_target
+        d_value = critic_error
 
-        grad_wc = clip_grad(d_value * h)   # shape (HIDDEN,)
-        grad_bc = clip_grad(d_value)       # escalar
+        grad_wc = clip_grad(d_value * h)
+        grad_bc = clip_grad(d_value)
+        dh_from_critic = self.W_critic.T[:, 0] * d_value
 
-        # Gradiente que el Critic manda hacia h (para actualizar W1)
-        dh_from_critic = self.W_critic.T[:, 0] * d_value  # shape (HIDDEN,)
-
-        # ------------------------------
-        # Gradientes del Actor
-        # (afecta W_actor, W2_actor, y W1 via dh_from_actor)
-        # ------------------------------
+        # --- Actor: calcular TODOS los gradientes primero ---
         d_actor_raw = np.zeros(ACTOR_OUT)
 
-        # Policy Gradient para la acción discreta (disparo)
+        # Continuos: gradiente gaussiano correcto (accion_tomada - media)
+        d_actor_raw[0] = -advantage * (action['move_x']    - state["move_x"])    / (sigma**2)
+        d_actor_raw[1] = -advantage * (action['move_y']    - state["move_y"])    / (sigma**2)
+        d_actor_raw[2] = -advantage * (action['shot_angle']- state["shot_angle"])/ (sigma**2)
+
+        # Discreto: policy gradient + entropy
         p = np.clip(state["shoot_prob"], 1e-6, 1.0 - 1e-6)
         d_actor_raw[3] = -(action['discrete'] - p) * advantage
+        d_actor_raw[3] += ENTROPY_BETA * np.log(p / (1.0 - p)) * p * (1.0 - p)
 
-        # Entropy bonus (incentiva exploración)
-        entropy_grad   = np.log(p / (1.0 - p))
-        d_actor_raw[3] += ENTROPY_BETA * entropy_grad * p * (1.0 - p)
-
-        # Gradientes de W_actor y b_actor
+        # Gradientes de W_actor
         grad_wa = clip_grad(np.outer(d_actor_raw, h2))
         grad_ba = clip_grad(d_actor_raw)
 
-        # Backprop a través de h2 (ReLU de z2_actor)
-        dh2 = self.W_actor.T @ d_actor_raw               # shape (HIDDEN_ACTOR,)
-        dh2[state["z2_actor"] <= 0.0] = 0.0              # ReLU gate
+        # Backprop a h2
+        dh2 = self.W_actor.T @ d_actor_raw
+        dh2[state["z2_actor"] <= 0.0] = 0.0
 
-        # Gradientes de W2_actor y b2_actor
-        grad_w2a = clip_grad(np.outer(dh2, h))           # shape (HIDDEN_ACTOR, HIDDEN)
+        grad_w2a = clip_grad(np.outer(dh2, h))
         grad_b2a = clip_grad(dh2)
 
-        # Gradiente que el Actor manda hacia h (para actualizar W1)
-        dh_from_actor = self.W2_actor.T @ dh2            # shape (HIDDEN,)
+        dh_from_actor = self.W2_actor.T @ dh2
 
-        d_actor_raw[0] = -advantage * (state["move_x"]) / (sigma**2)
-        d_actor_raw[1] = -advantage * (state["move_y"]) / (sigma**2)
-        d_actor_raw[2] = -advantage * (state["shot_angle"]) / (sigma**2)
-        
-        # ------------------------------
         # Gradiente combinado hacia W1
-        # El Critic y el Actor se suman PERO con pesos distintos
-        # para que el Critic no domine
-        # ------------------------------
-        dh_combined = (
-            dh_from_critic * (LR_CRITIC / LR_SHARED)
-            + dh_from_actor * (LR_ACTOR / LR_SHARED)
-        )
-        dh_combined[state["z1"] <= 0.0] = 0.0            # ReLU gate de z1
+        dh_combined = dh_from_critic + dh_from_actor
+        dh_combined[state["z1"] <= 0.0] = 0.0
 
         grad_w1 = clip_grad(np.outer(dh_combined, state["x"]))
         grad_b1 = clip_grad(dh_combined)
 
-        # ------------------------------
-        # Actualización de pesos
-        # Orden: primero cabezas, después capas previas
-        # ------------------------------
-
-        # Critic
+        # Actualización
         self.W_critic[0] -= LR_CRITIC * grad_wc
         self.b_critic[0] -= LR_CRITIC * grad_bc
-
-        # Actor (cabeza)
-        self.W_actor  -= LR_ACTOR * grad_wa
-        self.b_actor  -= LR_ACTOR * grad_ba
-
-        # Actor (capa exclusiva)
-        self.W2_actor -= LR_ACTOR * grad_w2a
-        self.b2_actor -= LR_ACTOR * grad_b2a
-
-        # Capa compartida (usa LR_SHARED, más conservador)
-        self.W1 -= LR_SHARED * grad_w1
-        self.b1 -= LR_SHARED * grad_b1
+        self.W_actor     -= LR_ACTOR  * grad_wa
+        self.b_actor     -= LR_ACTOR  * grad_ba
+        self.W2_actor    -= LR_ACTOR  * grad_w2a
+        self.b2_actor    -= LR_ACTOR  * grad_b2a
+        self.W1          -= LR_SHARED * grad_w1
+        self.b1          -= LR_SHARED * grad_b1
 
     def save(self, path="./assets/train_data/boss_brain.json") -> None:
         data = {
