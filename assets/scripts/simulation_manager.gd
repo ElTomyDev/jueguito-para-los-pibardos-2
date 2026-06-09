@@ -18,8 +18,8 @@ const REWARD_FAST_WIN_BONUS  : float =  0.01   # por step restante al ganar
 const REWARD_FAST_LOSE_BONUS : float = -0.005   # por step restante al perder rápido
 
 # Fase 0 — Movimiento
-const R_MOVING               : float =  0.1   # por moverse (velocidad > umbral)
-const R_STATIC               : float = -0.3   # por estar quieto
+const R_MOVING               : float =  0.02   # por moverse (velocidad > umbral)
+const R_STATIC               : float = -0.05   # por estar quieto
 
 # Fase 1 — Proximidad
 const R_CLOSENESS_MAX        : float =  0.4   # escala por cercanía (0 a 0.4)
@@ -28,10 +28,10 @@ const R_TOO_FAR              : float = -0.2   # si supera MIN_DIST
 # Fase 2 — Disparo y puntería
 const R_AIM_MAX              : float =  0.3   # escala por ángulo (0 a 0.5)
 const R_DAMAGE_DEALT         : float =  0.5   # por HP quitado al jugador
-const R_DAMAGE_TAKEN         : float = -0.02  # por HP perdido (normalizado)
+const R_DAMAGE_TAKEN         : float = -0.08  # por HP perdido (normalizado)
 
 # Fase 3 — Esquive
-const R_DODGE_BULLET         : float =  0.05  # por alejarse de bala
+const R_DODGE_BULLET         : float =  0.02  # por alejarse de bala
 
 const MIN_PLAYER_DIST        : float = 400.0
 const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movimiento"
@@ -117,12 +117,12 @@ func _calculate_reward() -> float:
 	var damage_dealt = last_player_health - current_hp
 	if damage_dealt > 0:
 		reward += (damage_dealt / p.max_health) * R_DAMAGE_DEALT
-		
-		# Daño recibido (normalizado)
-		var damage_taken = last_boss_health - b.health
-		if damage_taken > 0:
-			reward += (damage_taken / b.max_health) * R_DAMAGE_TAKEN
 	
+	# Daño recibido (normalizado)
+	var damage_taken = last_boss_health - b.health
+	if damage_taken > 0:
+		reward += (damage_taken / b.max_health) * R_DAMAGE_TAKEN
+
 	# --- FASE 3+: Esquive ---
 	if is_instance_valid(b.near_bullet):
 		var b_dist = b.global_position.distance_to(b.near_bullet.global_position)

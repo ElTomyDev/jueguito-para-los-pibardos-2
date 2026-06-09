@@ -102,6 +102,7 @@ class ActorCritic:
         next_value = 0.0 if done else next_state["value"]
         td_target  = reward + GAMMA * next_value
         advantage  = np.clip(td_target - value, -10.0, 10.0)
+        sigma = 0.5  
 
         h  = state["h"]
         h2 = state["h2"]
@@ -127,7 +128,7 @@ class ActorCritic:
 
         # Policy Gradient para la acción discreta (disparo)
         p = np.clip(state["shoot_prob"], 1e-6, 1.0 - 1e-6)
-        d_actor_raw[3] = -(action - p) * advantage
+        d_actor_raw[3] = -(action['discrete'] - p) * advantage
 
         # Entropy bonus (incentiva exploración)
         entropy_grad   = np.log(p / (1.0 - p))
@@ -148,6 +149,10 @@ class ActorCritic:
         # Gradiente que el Actor manda hacia h (para actualizar W1)
         dh_from_actor = self.W2_actor.T @ dh2            # shape (HIDDEN,)
 
+        d_actor_raw[0] = -advantage * (state["move_x"]) / (sigma**2)
+        d_actor_raw[1] = -advantage * (state["move_y"]) / (sigma**2)
+        d_actor_raw[2] = -advantage * (state["shot_angle"]) / (sigma**2)
+        
         # ------------------------------
         # Gradiente combinado hacia W1
         # El Critic y el Actor se suman PERO con pesos distintos
@@ -309,7 +314,12 @@ while True:
             nn.train_step(last_state, state, reward, False, last_action)
 
         last_state  = state
-        last_action = action
+        last_action = {
+            "discrete": action,
+            "move_x": float(state["move_x"]) + np.random.normal(0, 0.2),
+            "move_y": float(state["move_y"]) + np.random.normal(0, 0.2),
+            "shot_angle": float(state["shot_angle"]) + np.random.normal(0, 0.2),
+        }
 
         resp = {
             "move_dir":   [float(state["move_x"]), float(state["move_y"])],
