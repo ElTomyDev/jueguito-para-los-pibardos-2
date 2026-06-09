@@ -10,7 +10,7 @@ ACTOR_OUT = 4
 
 # --- Red neuronal en NumPy ---
 class ActorCritic:
-    def __init__(self):
+    def __init__(self) -> None:
         scale1 = np.sqrt(2.0 / INPUTS)
         scale_a = np.sqrt(2.0 / HIDDEN)
         self.W1      = np.random.uniform(-scale1, scale1, (HIDDEN, INPUTS))
@@ -30,7 +30,7 @@ class ActorCritic:
         v = float((self.W_critic @ h + self.b_critic)[0])
         return {"h": h, "ao": ao, "v": v, "x": x, "ar": ar}
 
-    def train_step(self, state, next_state, reward, done, action):
+    def train_step(self, state, next_state, reward, done, action) -> None:
         lr_a, lr_c, gamma = 0.00005, 0.0001, 0.99
         wd, max_g = 1e-6, 1.0
 
@@ -61,7 +61,7 @@ class ActorCritic:
         self.W1 = self.W1 * (1 - wd) - lr_a * np.outer(dh, state["x"])
         self.b1 = self.b1 * (1 - wd) - lr_a * dh
 
-    def save(self, path="./assets/train_data/boss_brain.json"):
+    def save(self, path="./assets/train_data/boss_brain.json") -> None:
         data = {k: v.tolist() for k, v in {
             "W1": self.W1, "b1": self.b1,
             "W_actor": self.W_actor, "b_actor": self.b_actor,
@@ -71,7 +71,7 @@ class ActorCritic:
             json.dump(data, f)
         print(f"[server] modelo guardado en {path}")
 
-    def load(self, path="./assets/train_data/boss_brain.json"):
+    def load(self, path="./assets/train_data/boss_brain.json") -> None:
         try:
             with open(path) as f:
                 d = json.load(f)
@@ -88,10 +88,10 @@ class ActorCritic:
 
 # --- Replay buffer ---
 class ReplayBuffer:
-    def __init__(self, cap=512):
+    def __init__(self, cap=512) -> None:
         self.buf, self.pos, self.cap = [], 0, cap
 
-    def add(self, s, ns, r, done, a):
+    def add(self, s, ns, r, done, a) -> None:
         t = (s, ns, r, done, a)
         if len(self.buf) < self.cap:
             self.buf.append(t)
@@ -99,11 +99,11 @@ class ReplayBuffer:
             self.buf[self.pos] = t
         self.pos = (self.pos + 1) % self.cap
 
-    def sample(self, n=16):
+    def sample(self, n=16) -> list:
         idx = np.random.choice(len(self.buf), min(n, len(self.buf)), replace=False)
         return [self.buf[i] for i in idx]
 
-    def ready(self, n=64):
+    def ready(self, n=64) -> bool:
         return len(self.buf) >= n
 
 
