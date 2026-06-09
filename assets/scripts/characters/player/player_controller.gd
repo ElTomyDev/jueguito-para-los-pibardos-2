@@ -36,6 +36,8 @@ var bullet_to_group: StringName = "Boss" # Target de la bala
 
 var auto_vel: float = 1800.0
 var auto_dir: int = 1
+
+var auto_shot_timer: int = 0
 var auto_move_timer: int = 0
 var auto_jump_timer: int = 0
 
@@ -86,23 +88,29 @@ func update_automatic_mechanics(delta: float) -> void:
 func _auto_shot() -> void:
 	if not is_instance_valid(GlobalVars.boss): return
 	var margin = 100
-	if GlobalVars.current_episode > 1500:
-		if GlobalVars.current_step % 50 == 0:
+	var rand_shot = randi_range(20, 50)
+	if auto_shot_timer >= rand_shot:
+			rand_shot = randi_range(20, 50)
+			auto_move_timer = 0
+	if GlobalVars.current_episode > 0:
+		if GlobalVars.current_step % rand_shot == 0:
 			shot_attack._shot(Utils.view_to(
 			shot_attack.global_position,
 			GlobalVars.boss.global_position + Vector2(randf_range(-margin, margin), randf_range(-margin, margin)),
 			100.0, shot_attack, false
 			))
+			auto_shot_timer += 1
+	
 
 func _auto_move(delta: float) -> void:
 	var rand_move = randi_range(50, 400)
 	var rand_jump = randi_range(200, 400)
 	
-	if GlobalVars.current_step >= 200:
-		if auto_move_timer == rand_move:
+	if GlobalVars.current_step >= 0:
+		if auto_move_timer >= rand_move:
 			rand_move = randi_range(50, 400)
 			auto_move_timer = 0
-		if auto_jump_timer == rand_jump:
+		if auto_jump_timer >= rand_jump:
 			rand_jump = randi_range(200, 400)
 			auto_jump_timer = 0
 

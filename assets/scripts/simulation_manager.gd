@@ -16,8 +16,8 @@ var reward_count: int = 0
 
 # ---- Rewards unificados ----+
 # Terminales
-const REWARD_WIN             : float =  5.0
-const REWARD_LOSE            : float = -5.0
+const REWARD_WIN             : float =  100.0
+const REWARD_LOSE            : float = -100.0
 const REWARD_FAST_WIN_BONUS  : float =  0.01   # por step restante al ganar
 const REWARD_FAST_LOSE_BONUS : float = -0.005   # por step restante al perder rápido
 
@@ -55,7 +55,7 @@ var last_dist_to_bullet: float = 0.0
 var is_resetting: bool = false
 
 func _ready() -> void:
-	Engine.time_scale = 2.0
+	Engine.time_scale = 1.0
 	_load_train_data()
 	_init_nn_core()
 	_spawn_entities()
@@ -94,7 +94,6 @@ func _calculate_reward() -> float:
 	var reward: float = 0.0
 	if not is_instance_valid(GlobalVars.boss): return reward
 	
-	var phase: int = _get_current_phase()
 	var b = GlobalVars.boss
 	var p = GlobalVars.players[0] if not GlobalVars.players.is_empty() else null
 	
@@ -103,29 +102,29 @@ func _calculate_reward() -> float:
 	reward += lerp(R_STATIC, R_MOVING, speed_ratio)
 	
 	# --- FASE 1+: Proximidad al jugador ---
-	if phase >= 1 and is_instance_valid(p):
-		var dist = b.global_position.distance_to(p.global_position)
-		
-		if dist > MIN_PLAYER_DIST:
-			reward += R_TOO_FAR
-		else:
-			var closeness = 1.0 - clamp(dist / MIN_PLAYER_DIST, 0.0, 1.0)
-			reward += R_CLOSENESS_MAX * closeness
+	#if phase >= 1 and is_instance_valid(p):
+	var dist = b.global_position.distance_to(p.global_position)
+	
+	if dist > MIN_PLAYER_DIST:
+		reward += R_TOO_FAR
+	else:
+		var closeness = 1.0 - clamp(dist / MIN_PLAYER_DIST, 0.0, 1.0)
+		reward += R_CLOSENESS_MAX * closeness
 	
 	# --- FASE 2+: Disparo, puntería y daño ---
-	if phase >= 2 and is_instance_valid(p):
-		# Recompensa por puntería (solo si eligió atacar)
-		if b.current_action == 1:
-			var ideal_angle = (p.global_position - b.global_position).angle()
-			var angle_diff = abs(wrapf(ideal_angle - b.shot_angle, -PI, PI))
-			reward += R_AIM_MAX * (1.0 - (angle_diff / PI))
-			last_angle_error = angle_diff
-		
-		# Daño infligido (normalizado por max_health del jugador)
-		var current_hp = p.health
-		var damage_dealt = last_player_health - current_hp
-		if damage_dealt > 0:
-			reward += (damage_dealt / p.max_health) * R_DAMAGE_DEALT
+	#if phase >= 2 and is_instance_valid(p):
+	# Recompensa por puntería (solo si eligió atacar)
+	if b.current_action == 1:
+		var ideal_angle = (p.global_position - b.global_position).angle()
+		var angle_diff = abs(wrapf(ideal_angle - b.shot_angle, -PI, PI))
+		reward += R_AIM_MAX * (1.0 - (angle_diff / PI))
+		last_angle_error = angle_diff
+	
+	# Daño infligido (normalizado por max_health del jugador)
+	var current_hp = p.health
+	var damage_dealt = last_player_health - current_hp
+	if damage_dealt > 0:
+		reward += (damage_dealt / p.max_health) * R_DAMAGE_DEALT
 		
 		# Daño recibido (normalizado)
 		var damage_taken = last_boss_health - b.health
@@ -133,14 +132,14 @@ func _calculate_reward() -> float:
 			reward += (damage_taken / b.max_health) * R_DAMAGE_TAKEN
 	
 	# --- FASE 3+: Esquive ---
-	if phase >= 3 and is_instance_valid(b.near_bullet):
-		var dist = b.global_position.distance_to(b.near_bullet.global_position)
+	if is_instance_valid(b.near_bullet):
+		var b_dist = b.global_position.distance_to(b.near_bullet.global_position)
 		if last_dist_to_bullet > 0:
-			var dist_increase = dist - last_dist_to_bullet
+			var dist_increase = b_dist - last_dist_to_bullet
 			if dist_increase > 0:
 				reward += dist_increase * R_DODGE_BULLET
-		last_dist_to_bullet = dist
-	elif phase < 3:
+		last_dist_to_bullet = b_dist
+	else:
 		last_dist_to_bullet = 0.0
 	
 	if is_instance_valid(p):
@@ -163,7 +162,6 @@ func _calculate_final_reward() -> float:
 	return final_reward
 
 func _handle_episode_end() -> void:
-	# Activamos la bandera para congelar el procesamiento físico durante el cambio de escena
 	is_resetting = true
 	
 	var final_reward: float = _calculate_final_reward()
@@ -290,7 +288,7 @@ func _load_train_data() -> void:
 			print("No hay informacion para cargar en el archivo:", GlobalConst.BEST_TRAIN_DATA_PATH)
 			return
 		
-		GlobalVars.current_episode = data['episode'] if not load_best_model else data['best_avg_episode']
+		GlobalVars.current_episode = data['episode']
 		GlobalVars.best_avg_reward = data['best_avg_reward']
 		GlobalVars.best_avg_episode = data['best_avg_episode']
 		GlobalVars.episode_rewards = data['episodes_rewards']
