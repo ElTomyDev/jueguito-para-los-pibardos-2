@@ -10,10 +10,6 @@ var viewport_size: Vector2
 @export var load_best_model     : bool = false
 @export var is_new_train        : bool = false
 
-var reward_mean: float = 0.0
-var reward_var: float = 1.0
-var reward_count: int = 0
-
 # ---- Rewards unificados ----+
 # Terminales
 const REWARD_WIN             : float =  100.0
@@ -68,7 +64,7 @@ func _physics_process(_delta: float) -> void:
 	
 	var current_inputs: Array = _get_inputs_for_nn()
 	var epsilon: float = max(0.05, 0.3 - GlobalVars.current_episode * 0.0001)
-	var reward: float = _normalize_reward(_calculate_reward())
+	var reward: float = _calculate_reward()
 	GlobalVars.current_reward += reward
 	
 	var response = nn_client.request_action(current_inputs, reward, epsilon)
@@ -83,13 +79,6 @@ func _physics_process(_delta: float) -> void:
 # -----------------------------
 # --- Manejo de recompensas ---
 # -----------------------------
-func _get_current_phase() -> int:
-	var ep = GlobalVars.current_episode
-	if ep >= GlobalConst.PHASE_4_START: return 3
-	if ep >= GlobalConst.PHASE_3_START: return 2
-	if ep >= GlobalConst.PHASE_2_START: return 1
-	return 0
-
 func _calculate_reward() -> float:
 	var reward: float = 0.0
 	if not is_instance_valid(GlobalVars.boss): return reward
@@ -301,12 +290,3 @@ func _save_train_data() -> void:
 		'episodes_rewards': GlobalVars.episode_rewards
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)
-
-func _normalize_reward(r: float) -> float:
-	reward_count += 1
-	var delta = r - reward_mean
-	reward_mean += delta / reward_count
-	var delta2 = r - reward_mean
-	reward_var = reward_var + (delta * delta2 - reward_var) / reward_count
-	var std = sqrt(max(reward_var, 0.01))
-	return clamp(r / std, -5.0, 5.0)
