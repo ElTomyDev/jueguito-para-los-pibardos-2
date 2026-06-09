@@ -43,89 +43,43 @@ const MIN_SPEED_THRESHOLD    : float = 20.0   # px/s mínimo para "estar en movi
 # ---------------
 #  Nodos de la NN
 # ---------------
-var nn           : NeuralNetwork
-var trainer      : NNTrainer
-var persistence  : NNPersistence
-var replay_buffer: ReplayBuffer
+var nn_client: NNClient
 
 # Variables para guardar el historial del último paso e iterar el algoritmo
-var last_state_activation: Dictionary = {}
-var last_action_taken: int = 0
 var last_boss_health: float = 0.0
 var last_player_health: float = 0.0
 var last_angle_error: float = 0.0
 var last_dist_to_player: float = 0.0
 var last_dist_to_bullet: float = 0.0
 
-var _train_frame_counter: int = 0
-
 var is_resetting: bool = false
-var _last_phase: int = -1
 
 func _ready() -> void:
 	Engine.time_scale = 2.0
 	_load_train_data()
 	_init_nn_core()
 	_spawn_entities()
-	_last_phase = _get_current_phase()
 
 func _physics_process(_delta: float) -> void:
-	# Si estamos en medio de un reset, o las entidades aún no se registraron en el árbol, ignoramos el frame.
-	# Esto evita por completo el spawn múltiple e infinito de jefes.
-	if is_resetting:
-		return
-	 # Esperamos a que ambas entidades estén registradas antes de simular
-	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
-		return
-		
-	var current_phase = _get_current_phase()
-	if current_phase != _last_phase:
-		_last_phase = current_phase
-		_reset_critic_on_phase_change()
-		print("Cambio a fase ", current_phase, " — critic reseteado")
+	if is_resetting: return
+	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty(): return
 	
 	GlobalVars.current_step += 1
 	
-	# 1. Obtener entradas y ejecutar Forward Pass
-	var current_inputs: Array = _get_inputs_for_nn()
-	var current_activation: Dictionary = nn.forward(current_inputs)
-	
-	# 2. Mapear salidas del Actor a las variables globales del juego
-	_update_nn_outputs(current_activation["actor_outputs"])
-	
 	# Determinar acción discreta tomada por la red basados en umbral de probabilidad (0.5)
+	var current_inputs: Array = _get_inputs_for_nn()
 	var epsilon: float = max(0.05, 0.3 - GlobalVars.current_episode * 0.0001)
-	var action_taken: int
-	if randf() < epsilon:
-		GlobalVars.nn_outputs["move_dir"] = [randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)]
-		action_taken = randi() % 2
-	else:
-		action_taken = 1 if current_activation["actor_outputs"][3] >= 0.2 else 0
-	# 3. Calcular la recompensa del paso actual de entrenamiento
 	var reward: float = _normalize_reward(_calculate_reward())
 	GlobalVars.current_reward += reward
 	
-	if not last_state_activation.is_empty():
-		replay_buffer.add(last_state_activation, current_activation, reward, false, last_action_taken)
-	_train_frame_counter +=1
-	if _train_frame_counter % 2 == 0 and replay_buffer.is_ready(64):
-		var batch = replay_buffer.sample(16)
-		for transition in batch:
-			trainer.train_step(
-				nn,
-				transition["state"],
-				transition["next"],
-				transition["reward"],
-				transition["done"],
-				transition["action"]
-			)
-	# Guardar estado actual como referencia histórica para el próximo cuadro
-	last_state_activation = _duplicate_activation(current_activation)
-	last_action_taken = action_taken
+	var response = nn_client.request_action(current_inputs, reward, epsilon)
+	
+	GlobalVars.nn_outputs["move_dir"]   = response.get("move_dir", [0.0, 0.0])
+	GlobalVars.nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
+	GlobalVars.nn_outputs["action"]     = response.get("action", 0)
 	
 	if GlobalVars.boss.current_action == 1:
 		GlobalVars.shot_intents += 1
-	
 	
 	# 5. Comprobar condiciones de fin del episodio
 	if _can_episode_end():
@@ -217,12 +171,12 @@ func _handle_episode_end() -> void:
 		# Timeout — se trata como derrota
 		final_reward = REWARD_LOSE
 	
-	if not last_state_activation.is_empty():
-		trainer.train_step(nn, last_state_activation, {}, final_reward, true, last_action_taken)
+	nn_client.notify_episode_end(
+		GlobalVars.current_episode,
+		GlobalVars.current_reward,
+		final_reward
+	)
 	
-	print("Fin del Episodio: ", GlobalVars.current_episode, " | Recompensa Acumulada: ", GlobalVars.current_reward)
-	
-	_check_and_save_best()
 	_save_train_data()
 	
 	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
@@ -272,38 +226,6 @@ func _update_nn_outputs(output: Array) -> void:
 	GlobalVars.nn_outputs["shot_angle"] = output[2]
 	GlobalVars.nn_outputs["action"] = output[3]
 
-func _check_and_save_best() -> void:
-	# Guardar siempre el último modelo 
-	persistence.save_network(nn, GlobalConst.SAVE_MODEL_PATH)
-	# Actualizar ventana
-	GlobalVars.recent_rewards.append(GlobalVars.current_reward)
-	if GlobalVars.recent_rewards.size() > GlobalConst.REWARD_WINDOW:
-		GlobalVars.recent_rewards.pop_front()
-	
-	if GlobalVars.recent_rewards.size() < GlobalConst.REWARD_WINDOW:
-		return
-	
-	# Calcular promedio
-	var avg_reward = 0.0
-	for r in GlobalVars.recent_rewards:
-		avg_reward += r
-	avg_reward /= GlobalVars.recent_rewards.size()
-	
-	# Comparar con mejor promedio
-	if avg_reward > GlobalVars.best_avg_reward:
-		GlobalVars.best_avg_reward = avg_reward
-		GlobalVars.best_avg_episode = GlobalVars.current_episode
-		persistence.save_network(nn, GlobalConst.SAVE_BEST_MODEL_PATH)
-		print("Nuevo mejor promedio (últimos ", GlobalConst.REWARD_WINDOW, " episodios): ", GlobalVars.best_avg_reward, " en episodio ", GlobalVars.best_avg_episode)
-
-
-func _reset_critic_on_phase_change() -> void:
-	nn.W_critic = nn._random_matrix(
-		nn.critic_output_size, 
-		nn.hidden_size, 
-		sqrt(2.0 / nn.hidden_size)
-	)
-	nn.b_critic = nn._zero_vector(nn.critic_output_size)
 # --------
 # Utilidad
 # --------
@@ -320,7 +242,6 @@ func _reset_episode() -> void:
 	# Elimina y resetea el boss.
 	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
 	
-	last_state_activation.clear()
 	last_angle_error = 0.0
 	last_dist_to_player = 0.0
 	last_dist_to_bullet = 0.0
@@ -338,16 +259,7 @@ func _reset_episode() -> void:
 
 func _init_nn_core() -> void:
 	# Instanciar el Core de Inteligencia Artificial
-	nn = NeuralNetwork.new()
-	trainer = NNTrainer.new()
-	persistence = NNPersistence.new()
-	replay_buffer = ReplayBuffer.new(512)
-	
-	# Intentar cargar pesos previos
-	if load_best_model:
-		persistence.load_network(nn, GlobalConst.SAVE_BEST_MODEL_PATH)
-	else:
-		persistence.load_network(nn, GlobalConst.SAVE_MODEL_PATH)
+	nn_client = NNClient.new()
 
 func _spawn_entities() -> void:
 	var player_instance = player.instantiate() as PlayerController
