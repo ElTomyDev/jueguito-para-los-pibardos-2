@@ -249,8 +249,6 @@ while True:
     msg = json.loads(data.decode())
 
     if msg["type"] == "step":
-        print(len(msg["inputs"]))
-        print(msg["inputs"])
         x = np.array(
             msg["inputs"],
             dtype=np.float64
