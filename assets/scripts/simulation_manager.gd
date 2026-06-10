@@ -50,6 +50,7 @@ func _ready() -> void:
 	Engine.time_scale = 1.0
 	_load_train_data()
 	_init_nn_core()
+	_reset_health_tracking()
 	_spawn_entities()
 
 func _physics_process(_delta: float) -> void:
