@@ -19,10 +19,10 @@ EPOCHS      = 4         # épocas por batch en PPO
 BATCH_SIZE  = 256
 MINI_BATCH  = 64
 
-def sigmoid(x):
+def sigmoid(x) -> float:
     return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
 
-def clip_grad(g):
+def clip_grad(g) -> any:
     return np.clip(g, -MAX_GRAD, MAX_GRAD)
 
 class LSTMCell:
@@ -70,6 +70,65 @@ class LSTMCell:
 
     def zero_state(self):
         return np.zeros(self.hidden_size), np.zeros(self.hidden_size)
+
+    def backward(self, dh, dc, cache):
+        xh      = cache["xh"]
+
+        f       = cache["f"]
+        i       = cache["i"]
+        o       = cache["o"]
+
+        c_prev  = cache["c_prev"]
+        c_tilde = cache["c_tilde"]
+        c_new   = cache["c_new"]
+
+        tanh_c = np.tanh(c_new)
+
+        do = dh * tanh_c
+        dc = dc + dh * o * (1.0 - tanh_c * tanh_c)
+
+        df = dc * c_prev
+        di = dc * c_tilde
+        dg = dc * i
+
+        dc_prev = dc * f
+
+        df_raw = df * f * (1.0 - f)
+        di_raw = di * i * (1.0 - i)
+        do_raw = do * o * (1.0 - o)
+        dg_raw = dg * (1.0 - c_tilde * c_tilde)
+
+        gWf = np.outer(df_raw, xh)
+        gWi = np.outer(di_raw, xh)
+        gWo = np.outer(do_raw, xh)
+        gWc = np.outer(dg_raw, xh)
+
+        gbf = df_raw
+        gbi = di_raw
+        gbo = do_raw
+        gbc = dg_raw
+
+        dxh = (
+            self.Wf.T @ df_raw +
+            self.Wi.T @ di_raw +
+            self.Wo.T @ do_raw +
+            self.Wc.T @ dg_raw
+        )
+
+        return {
+            "dxh": dxh,
+            "dc_prev": dc_prev,
+
+            "Wf": gWf,
+            "Wi": gWi,
+            "Wo": gWo,
+            "Wc": gWc,
+
+            "bf": gbf,
+            "bi": gbi,
+            "bo": gbo,
+            "bc": gbc
+        }
 
 class PPOActorCritic:
 
@@ -170,6 +229,15 @@ class PPOActorCritic:
         gba   = np.zeros_like(self.b_actor)
         gWc   = np.zeros_like(self.W_critic)
         gbc   = np.zeros_like(self.b_critic)
+        gWf = np.zeros_like(self.lstm.Wf)
+        gWi = np.zeros_like(self.lstm.Wi)
+        gWc_lstm = np.zeros_like(self.lstm.Wc)
+        gWo = np.zeros_like(self.lstm.Wo)
+
+        gbf = np.zeros_like(self.lstm.bf)
+        gbi = np.zeros_like(self.lstm.bi)
+        gbc_lstm = np.zeros_like(self.lstm.bc)
+        gbo = np.zeros_like(self.lstm.bo)
         g_log_std = np.zeros_like(self.log_std)
 
         for tr in batch:
@@ -200,9 +268,14 @@ class PPOActorCritic:
             d_raw = np.zeros(ACTOR_OUT)
             std = s["std"]
             for idx in range(3):
-                a_exec  = float(np.clip(actions[idx], -0.999, 0.999))
-                mu      = s["means"][idx]
-                d_raw[idx] = -ratio * adv * (a_exec - mu) / (std[idx] ** 2 + 1e-8)
+                a_exec = actions[idx]
+                mu = s["means"][idx]
+                std = s["std"][idx]
+
+                g_log_std[idx] += (
+                    ratio * adv *
+                    (((a_exec - mu) ** 2) / (std**2 + 1e-8) - 1.0)
+                )
 
             # Gradiente del actor (discreto) con PPO clip
             d_raw[3] = -ratio * adv * (actions[3] - p)
@@ -213,20 +286,47 @@ class PPOActorCritic:
 
             # Gradiente del critic
             d_val = v_pred - ret
-            gWc  += d_val * h
+            gWc  += np.outer(np.array([d_val]), h)
             gbc  += d_val
 
-            # Backprop al LSTM y capa de entrada
             dh = self.W_actor.T @ d_raw + self.W_critic.T[:, 0] * d_val
-            # Backprop LSTM (simplified: solo hasta h_new)
             cache = s["lstm_cache"]
-            dz    = self.lstm.Wo.T[:HIDDEN] @ (dh * np.tanh(cache["c_new"]))
-            dz   *= (s["z"] > 0).astype(float)  # ReLU
+            lstm_grads = self.lstm.backward(
+                dh,
+                np.zeros(HIDDEN),
+                cache
+            )
+
+            gWf += lstm_grads["Wf"]
+            gWi += lstm_grads["Wi"]
+            gWc_lstm += lstm_grads["Wc"]
+            gWo += lstm_grads["Wo"]
+
+            gbf += lstm_grads["bf"]
+            gbi += lstm_grads["bi"]
+            gbc_lstm += lstm_grads["bc"]
+            gbo += lstm_grads["bo"]
+
+            dz = lstm_grads["dxh"][:HIDDEN]
+
+            dz *= (s["z"] > 0)
 
             gW_in += np.outer(dz, cache["x"])
             gb_in += dz
+        
+        
 
         n = len(batch)
+        self.lstm.Wf -= LR * clip_grad(gWf / n)
+        self.lstm.Wi -= LR * clip_grad(gWi / n)
+        self.lstm.Wc -= LR * clip_grad(gWc_lstm / n)
+        self.lstm.Wo -= LR * clip_grad(gWo / n)
+        self.lstm.bf -= LR * clip_grad(gbf / n)
+        self.lstm.bi -= LR * clip_grad(gbi / n)
+        self.lstm.bc -= LR * clip_grad(gbc_lstm / n)
+        self.lstm.bo -= LR * clip_grad(gbo / n)
+        self.log_std -= LR * clip_grad(g_log_std / n)
+        self.log_std = np.clip(self.log_std, -4.0, 2.0)
         self.W_actor  -= LR * clip_grad(gWa / n)
         self.b_actor  -= LR * clip_grad(gba / n)
         self.W_critic[0] -= LR * clip_grad(gWc[0] / n)
