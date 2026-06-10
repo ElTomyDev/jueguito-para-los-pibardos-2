@@ -1,6 +1,10 @@
 import numpy as np
 import json
 from collections import deque
+import threading
+import queue as queue_module
+import socket
+
 
 # Hiperparámetros PPO
 INPUTS      = 40
@@ -69,8 +73,8 @@ class LSTMCell:
     def zero_state(self):
         return np.zeros(self.hidden_size), np.zeros(self.hidden_size)
 
-
 class PPOActorCritic:
+
     def __init__(self):
         s1 = np.sqrt(2.0 / INPUTS)
         s2 = np.sqrt(2.0 / HIDDEN)
@@ -221,7 +225,7 @@ class PPOActorCritic:
             dz    = self.lstm.Wo.T[:HIDDEN] @ (dh * np.tanh(cache["c_new"]))
             dz   *= (s["z"] > 0).astype(float)  # ReLU
 
-            gW_in += np.outer(dz, s["x"] if "x" in s else cache["x"])
+            gW_in += np.outer(dz, cache["x"])
             gb_in += dz
 
         n = len(batch)
@@ -268,3 +272,122 @@ class PPOActorCritic:
             print("[server] modelo PPO+LSTM cargado")
         except FileNotFoundError:
             print("[server] modelo nuevo")
+
+# -------------------------------------------------------
+# SERVIDOR
+# -------------------------------------------------------
+
+nn = PPOActorCritic()
+nn.load()
+
+# Hidden state del LSTM — se resetea por episodio
+h_state, c_state = nn.lstm.zero_state()
+
+# Buffer de trayectorias del episodio actual (para GAE)
+episode_buffer = []
+
+# Thread de entrenamiento separado para no bloquear el socket
+train_queue = queue_module.Queue(maxsize=4)
+
+def training_worker() -> None:
+    while True:
+        trajectories = train_queue.get()
+        if trajectories is None:
+            break
+        nn.ppo_update(trajectories)
+        train_queue.task_done()
+
+train_thread = threading.Thread(target=training_worker, daemon=True)
+train_thread.start()
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("127.0.0.1", 9999))
+print("[server] escuchando 127.0.0.1:9999")
+
+last_state = None
+last_actions = None
+
+while True:
+    data, addr = sock.recvfrom(65535)
+    msg = json.loads(data.decode())
+
+    if msg["type"] == "step":
+        x       = np.array(msg["inputs"], dtype=np.float64)
+        epsilon = msg.get("epsilon", 0.1)
+        reward  = msg.get("reward", 0.0)
+
+        state = nn.forward(x, h_state, c_state)
+        h_state = state["h"]
+        c_state = state["c"]
+
+        move_x, move_y, angle, shoot = nn.sample_action(state, epsilon)
+
+        # Guarda transición con log_prob para PPO
+        if last_state is not None and last_actions is not None:
+            old_lp = nn.log_prob(last_state, last_actions)
+            episode_buffer.append({
+                "state":        last_state,
+                "actions":      last_actions,
+                "old_log_prob": old_lp,
+                "reward":       reward,
+                "done":         False,
+            })
+
+        last_state   = state
+        last_actions = [move_x, move_y, angle, shoot]
+
+        resp = {
+            "move_dir":   [move_x, move_y],
+            "shot_angle": angle,
+            "action":     shoot,
+        }
+        sock.sendto(json.dumps(resp).encode(), addr)
+
+    elif msg["type"] == "episode_end":
+        final_reward = msg.get("reward", 0.0)
+
+        # Cierra la trayectoria con la recompensa terminal
+        if last_state is not None and last_actions is not None:
+            old_lp = nn.log_prob(last_state, last_actions)
+            episode_buffer.append({
+                "state":        last_state,
+                "actions":      last_actions,
+                "old_log_prob": old_lp,
+                "reward":       final_reward,
+                "done":         True,
+            })
+
+        # Calcula GAE sobre la trayectoria completa del episodio
+        if len(episode_buffer) >= 2:
+            rewards = [t["reward"] for t in episode_buffer]
+            values  = [t["state"]["value"] for t in episode_buffer]
+            dones   = [t["done"] for t in episode_buffer]
+            advantages, returns = nn.compute_gae(rewards, values, dones)
+
+            trajectories = []
+            for i, tr in enumerate(episode_buffer):
+                trajectories.append({
+                    "state":        tr["state"],
+                    "actions":      tr["actions"],
+                    "old_log_prob": tr["old_log_prob"],
+                    "advantage":    float(advantages[i]),
+                    "return_":      float(returns[i]),
+                })
+
+            if not train_queue.full():
+                train_queue.put_nowait(trajectories)
+
+        nn.save()
+
+        # Reset para el próximo episodio
+        episode_buffer.clear()
+        last_state   = None
+        last_actions = None
+        h_state, c_state = nn.lstm.zero_state()  # CRÍTICO: resetea LSTM
+
+        print(
+            f"[server] ep {msg.get('episode','?')} "
+            f"| total={msg.get('total_reward', 0):.2f} "
+            f"| final={final_reward:.2f} "
+            f"| traj={len(trajectories) if 'trajectories' in dir() else 0}"
+        )
