@@ -271,12 +271,12 @@ class PPOActorCritic:
                 a_exec = actions[idx]
                 mu = s["means"][idx]
                 std = s["std"][idx]
-
-                g_log_std[idx] += (
-                    ratio * adv *
-                    (((a_exec - mu) ** 2) / (std**2 + 1e-8) - 1.0)
-                )
-
+                ppo_factor = ratio if abs(ratio - 1.0) < CLIP_EPS else np.clip(ratio, 1.0 - CLIP_EPS, 1.0 + CLIP_EPS)
+                d_raw[idx] = ppo_factor * adv * ((a_exec - mu) / (std * std + 1e-8)) * (1.0 - mu * mu)
+                
+                g_log_std[idx] += ratio * adv * (((a_exec - mu) ** 2) / (std**2 + 1e-8) - 1.0)
+                
+            
             # Gradiente del actor (discreto) con PPO clip
             d_raw[3] = -ratio * adv * (actions[3] - p)
             d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)

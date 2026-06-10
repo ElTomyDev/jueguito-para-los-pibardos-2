@@ -15,8 +15,8 @@ var viewport_size: Vector2
 # -------------------------------------------------------
 
 # Terminales  (se suman una sola vez al final)
-const REWARD_WIN              : float =  20.0
-const REWARD_LOSE             : float = -20.0
+const REWARD_WIN              : float =  1.0
+const REWARD_LOSE             : float = -1.0
 const REWARD_FAST_WIN_BONUS   : float =   0.02   # por step restante al ganar
 const REWARD_FAST_LOSE_BONUS  : float =  -0.01   # por step restante al perder rápido
 
@@ -28,8 +28,8 @@ const R_CLOSENESS_MAX         : float =  0.3     # máximo por proximidad
 const R_TOO_FAR               : float = -0.1     # demasiado lejos
 
 const R_AIM_MAX               : float =  0.3     # puntería perfecta
-const R_DAMAGE_DEALT          : float =  8.0     # por cada punto de HP quitado / max_hp (normalizado)
-const R_DAMAGE_TAKEN          : float = -1.0     # por cada punto de HP perdido / max_hp
+const R_DAMAGE_DEALT          : float =  0.5     # por cada punto de HP quitado / max_hp (normalizado)
+const R_DAMAGE_TAKEN          : float = -0.2     # por cada punto de HP perdido / max_hp
 
 const R_DODGE_MAX             : float =  0.1     # máximo por alejarse de bala (normalizado)
 
