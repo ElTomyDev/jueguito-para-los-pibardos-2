@@ -20,6 +20,7 @@ var reward_plot: PlotItem
 
 var view_graph: bool = true
 var view_train_info: bool = true
+var graph_x_margin: int = 10
 
 var update_rate: int = 10
 
@@ -79,7 +80,8 @@ func update_reward_graph() -> void:
 		reward_plot = reward_graph.add_plot_item("", Color.YELLOW)
 		# Carga inicial de todos los puntos existentes
 		for i in GlobalVars.episode_rewards.size():
-			reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+			if i % graph_x_margin == 0:
+				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
 		_last_plotted_episode = GlobalVars.episode_rewards.size() - 1
 		return
 		
@@ -87,5 +89,6 @@ func update_reward_graph() -> void:
 	var current_size = GlobalVars.episode_rewards.size()
 	if current_size > 0 and _last_plotted_episode < current_size - 1:
 		for i in range(_last_plotted_episode + 1, current_size):
-			reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+			if i % graph_x_margin == 0:
+				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
 		_last_plotted_episode = current_size - 1

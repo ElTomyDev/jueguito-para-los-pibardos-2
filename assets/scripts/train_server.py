@@ -8,7 +8,7 @@ import socket
 
 # Hiperparámetros PPO
 INPUTS      = 40
-HIDDEN      = 128
+HIDDEN      = 256
 ACTOR_OUT   = 4
 GAMMA       = 0.99
 LAMBDA      = 0.95      # GAE lambda

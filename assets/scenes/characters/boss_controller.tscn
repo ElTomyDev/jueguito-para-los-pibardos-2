@@ -12,22 +12,12 @@
 radius = 80.05623
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_r5g44"]
-radius = 238.03362
+radius = 499.06412
 
 [node name="BossController" type="CharacterBody2D" groups=["Boss"]]
 collision_layer = 2
 collision_mask = 8
 script = ExtResource("1_agbej")
-max_health = null
-base_damage = null
-damage_increment = null
-max_damage = null
-max_phases = null
-force_attack_mode = null
-attack_forced = null
-max_speed = null
-acceleration_speed = null
-deceleration_speed = null
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 texture = ExtResource("2_e77qu")

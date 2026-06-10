@@ -28,7 +28,7 @@ const R_CLOSENESS_MAX         : float =  0.3     # máximo por proximidad
 const R_TOO_FAR               : float = -0.1     # demasiado lejos
 
 const R_AIM_MAX               : float =  0.3     # puntería perfecta
-const R_DAMAGE_DEALT          : float =  5.0     # por cada punto de HP quitado / max_hp (normalizado)
+const R_DAMAGE_DEALT          : float =  8.0     # por cada punto de HP quitado / max_hp (normalizado)
 const R_DAMAGE_TAKEN          : float = -1.0     # por cada punto de HP perdido / max_hp
 
 const R_DODGE_MAX             : float =  0.1     # máximo por alejarse de bala (normalizado)
