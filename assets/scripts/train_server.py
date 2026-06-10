@@ -5,8 +5,7 @@ import threading
 import queue as queue_module
 import socket
 
-
-# Hiperparámetros PPO
+# Hiperparámetros 
 INPUTS      = 40
 HIDDEN      = 256
 ACTOR_OUT   = 4
@@ -25,7 +24,6 @@ def sigmoid(x):
 
 def clip_grad(g):
     return np.clip(g, -MAX_GRAD, MAX_GRAD)
-
 
 class LSTMCell:
     """LSTM minimal implementado en numpy"""
