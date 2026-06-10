@@ -78,56 +78,35 @@ func _physics_process(_delta: float) -> void:
 # -------------------------------------------------------
 
 func _calculate_reward() -> float:
-	var reward: float = 0.0
-	if not is_instance_valid(GlobalVars.boss): return reward
+	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
+		return 0.0
 	
+	var p = GlobalVars.players[0]
 	var b = GlobalVars.boss
-	var p = GlobalVars.players[0] if not GlobalVars.players.is_empty() else null
-	if not is_instance_valid(p): return reward
+	var reward = 0.0
 
-	# --- Movimiento ---
-	var speed_ratio = b.velocity.length() / b.max_speed
-	reward += lerp(R_STATIC, R_MOVING, speed_ratio)
-
-	# --- Proximidad ---
-	var dist = b.global_position.distance_to(p.global_position)
-	if dist > MIN_PLAYER_DIST:
-		reward += R_TOO_FAR
-	else:
-		var closeness = 1.0 - clamp(dist / MIN_PLAYER_DIST, 0.0, 1.0)
-		reward += R_CLOSENESS_MAX * closeness
-
-	# --- Puntería (solo si eligió atacar) ---
-	if b.current_action == 1:
-		var ideal_angle = (p.global_position - b.global_position).angle()
-		var angle_diff  = abs(wrapf(ideal_angle - b.shot_angle, -PI, PI))
-		reward += R_AIM_MAX * (1.0 - angle_diff / PI)
-
-	# --- Daño infligido (normalizado sobre max_health) ---
+	# 1. Daño infligido al jugador (positivo)
 	var damage_dealt = last_player_health - p.health
 	if damage_dealt > 0.0:
-		reward += (damage_dealt / p.max_health) * R_DAMAGE_DEALT
+		# Normalizado entre 0 y 1 (si mata al jugador, da +1)
+		reward += damage_dealt / p.max_health
 
-	# --- Daño recibido (normalizado) ---
+	# 2. Daño recibido (negativo)
 	var damage_taken = last_boss_health - b.health
 	if damage_taken > 0.0:
-		reward += (damage_taken / b.max_health) * R_DAMAGE_TAKEN
+		reward -= damage_taken / b.max_health
 
-	# --- Esquive: normalizado sobre viewport diagonal ---
-	if is_instance_valid(b.near_bullet):
-		var b_dist = b.global_position.distance_to(b.near_bullet.global_position)
-		if last_dist_to_bullet > 0.0:
-			# Normaliza la variación por el tamaño del mapa para evitar spikes
-			var delta_norm = (b_dist - last_dist_to_bullet) / viewport_size.length()
-			reward += clamp(delta_norm * R_DODGE_MAX, -R_DODGE_MAX, R_DODGE_MAX)
-		last_dist_to_bullet = b_dist
-	else:
-		last_dist_to_bullet = 0.0
+	# 3. Penalización por paso (incentiva ganar rápido)
+	reward -= 0.01
 
-	# Actualiza historial de salud
+	# 4. Bonus extra por matar al jugador (opcional, refuerza la victoria)
+	if p.health <= 0.0:
+		reward += 1.0   # para que el agente note que ganó
+
+	# Actualizar historial para el próximo paso
 	last_player_health = p.health
-	last_boss_health   = b.health
-	
+	last_boss_health = b.health
+
 	return reward
 
 func _calculate_final_reward() -> float:

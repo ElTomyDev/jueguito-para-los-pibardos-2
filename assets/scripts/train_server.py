@@ -1,6 +1,7 @@
 import numpy as np
 import json
-from collections import deque
+import threading
+import socket
 
 # Hiperparámetros PPO
 INPUTS      = 40
@@ -8,11 +9,10 @@ HIDDEN      = 128
 ACTOR_OUT   = 4
 GAMMA       = 0.99
 LAMBDA      = 0.95      # GAE lambda
-LR          = 0.0003
+LR          = 0.0001
 CLIP_EPS    = 0.2       # clip de PPO
 ENTROPY_B   = 0.01
 MAX_GRAD    = 0.5
-MAX_QUEUE   = 25
 EPOCHS      = 4         # épocas por batch en PPO
 BATCH_SIZE  = 256
 MINI_BATCH  = 64
@@ -57,6 +57,7 @@ class LSTMCell:
         o = sigmoid(self.Wo @ xh + self.bo)        # output gate
 
         c_new = f * c_prev + i * c_tilde
+        c_new = np.clip(c_new, -10.0, 10.0)
         h_new = o * np.tanh(c_new)
 
         cache = {
@@ -70,9 +71,61 @@ class LSTMCell:
     def zero_state(self):
         return np.zeros(self.hidden_size), np.zeros(self.hidden_size)
 
+    def backward(self, dh_next, dc_next, cache):
+        """
+        dh_next: gradiente respecto a h_new (desde arriba)
+        dc_next: gradiente respecto a c_new (desde arriba)
+        cache:  diccionario guardado en forward()
+        Retorna: dx, dh_prev, dc_prev, gradientes de los pesos
+        """
+        x = cache["x"]
+        h_prev = cache["h_prev"]
+        c_prev = cache["c_prev"]
+        xh = cache["xh"]
+        f = cache["f"]
+        i = cache["i"]
+        c_tilde = cache["c_tilde"]
+        o = cache["o"]
+        c_new = cache["c_new"]
+
+        # Gradiente de la salida
+        do = dh_next * np.tanh(c_new)
+        do = do * o * (1 - o)                # sigmoid derivative
+        dc_from_o = dh_next * o * (1 - np.tanh(c_new)**2)
+
+        # Gradiente de la celda
+        dc = dc_next + dc_from_o
+        tanh_c = np.tanh(c_new)
+        dc = dc * (1 - tanh_c**2)         # tanh derivative
+        dc = np.clip(dc, -10.0, 10.0)
+
+        # Gradientes de las compuertas
+        df = dc * c_prev * f * (1 - f)       # forget gate
+        di = dc * c_tilde * i * (1 - i)      # input gate
+        dc_tilde = dc * i * (1 - c_tilde**2) # candidate
+        do_input = do                         # output gate
+
+        # Acumular gradientes para pesos
+        dWf = np.outer(df, xh)
+        dbf = df
+        dWi = np.outer(di, xh)
+        dbi = di
+        dWc = np.outer(dc_tilde, xh)
+        dbc = dc_tilde
+        dWo = np.outer(do_input, xh)
+        dbo = do_input
+
+        # Gradiente para la entrada xh (concat de x y h_prev)
+        dxh = (self.Wf.T @ df) + (self.Wi.T @ di) + (self.Wc.T @ dc_tilde) + (self.Wo.T @ do_input)
+        dx = dxh[:self.hidden_size]          # porque input_size == hidden_size en este diseño
+        dh_prev = dxh[self.hidden_size:]
+        dc_prev = dc * f
+
+        return dx, dh_prev, dc_prev, (dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo)
 
 class PPOActorCritic:
     def __init__(self):
+        self.lock = threading.Lock()
         s1 = np.sqrt(2.0 / INPUTS)
         s2 = np.sqrt(2.0 / HIDDEN)
 
@@ -91,6 +144,7 @@ class PPOActorCritic:
 
         # Log std para outputs continuos (aprendible)
         self.log_std = np.full(3, -0.5)  # move_x, move_y, shot_angle
+        self.log_std = np.clip(self.log_std, -5.0, 2.0)
 
     def forward(self, x, h, c):
         z = np.maximum(0.0, self.W_in @ x + self.b_in)  # ReLU
@@ -104,8 +158,11 @@ class PPOActorCritic:
         shoot_prob = sigmoid(actor_raw[3])
 
         return {
-            "h": h_new, "c": c_new,
-            "z": z, "lstm_cache": cache,
+            "h": h_new,
+            "c": c_new,
+            "z": z,
+            "x": x,
+            "lstm_cache": cache,
             "actor_raw": actor_raw,
             "means": means,
             "std": std,
@@ -152,16 +209,124 @@ class PPOActorCritic:
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         return advantages, returns
 
-    def ppo_update(self, trajectories):
+    def bptt_update(self, trajectories):
         """
-        trajectories: lista de dicts con state, actions, old_log_prob, advantage, return_
+        trajectories: lista de diccionarios en orden temporal, cada uno con:
+            'state', 'actions', 'old_log_prob', 'advantage', 'return_'
         """
-        for _ in range(EPOCHS):
-            indices = np.random.permutation(len(trajectories))
-            for start in range(0, len(trajectories), MINI_BATCH):
-                batch = [trajectories[i] for i in indices[start:start + MINI_BATCH]]
-                self._update_minibatch(batch)
+        # Inicializar gradientes acumulados
+        gW_in = np.zeros_like(self.W_in)
+        gb_in = np.zeros_like(self.b_in)
+        gWa   = np.zeros_like(self.W_actor)
+        gba   = np.zeros_like(self.b_actor)
+        gWc   = np.zeros_like(self.W_critic)
+        gbc   = np.zeros_like(self.b_critic)
 
+        # Gradientes del LSTM (para el episodio completo)
+        g_lstm_Wf = np.zeros_like(self.lstm.Wf)
+        g_lstm_bf = np.zeros_like(self.lstm.bf)
+        g_lstm_Wi = np.zeros_like(self.lstm.Wi)
+        g_lstm_bi = np.zeros_like(self.lstm.bi)
+        g_lstm_Wc = np.zeros_like(self.lstm.Wc)
+        g_lstm_bc = np.zeros_like(self.lstm.bc)
+        g_lstm_Wo = np.zeros_like(self.lstm.Wo)
+        g_lstm_bo = np.zeros_like(self.lstm.bo)
+
+        # Estado oculto inicial y gradientes iniciales (cero al final del episodio)
+        dh_next = np.zeros(self.lstm.hidden_size)
+        dc_next = np.zeros(self.lstm.hidden_size)
+
+        # Recorrer el episodio en orden inverso
+        for tr in reversed(trajectories):
+            state = tr["state"]
+            adv = tr["advantage"]
+            ret = tr["return_"]
+            old_lp = tr["old_log_prob"]
+            actions = tr["actions"]
+
+            # ----- Pérdida PPO (igual que antes) -----
+            new_lp = self.log_prob(state, actions)
+            ratio = np.exp(np.clip(new_lp - old_lp, -10, 10))
+            clipped = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv
+            v_pred = state["value"]
+            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
+            entropy = -(p * np.log(p) + (1-p) * np.log(1-p))
+            entropy += 0.5 * np.sum(np.log(2 * np.pi * np.e * state["std"] ** 2))
+
+            # Gradientes para actor y critic (igual que antes)
+            d_raw = np.zeros(ACTOR_OUT)
+            std = state["std"]
+            for idx in range(3):
+                a_exec = float(np.clip(actions[idx], -0.999, 0.999))
+                mu = state["means"][idx]
+                d_raw[idx] = -ratio * adv * (a_exec - mu) / (std[idx] ** 2 + 1e-8)
+            d_raw[3] = -ratio * adv * (actions[3] - p)
+            d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
+
+            # Gradientes actor/critic
+            h = state["h"]
+            gWa += np.outer(d_raw, h)
+            gba += d_raw
+            d_val = v_pred - ret
+            gWc += np.outer(d_val, h)
+            gbc += d_val
+
+            # Gradiente que viene de las cabezas hacia la salida del LSTM
+            dh = self.W_actor.T @ d_raw + self.W_critic.T[:, 0] * d_val
+            # Añadir el dh_next acumulado del paso siguiente (BPTT)
+            dh_total = dh + dh_next
+
+            # Obtener el cache de este paso
+            cache = state["lstm_cache"]
+
+            dh_total = np.clip(dh_total, -5.0, 5.0)
+            dc_next = np.clip(dc_next, -5.0, 5.0)
+            
+            # Llamar al backward de la celda LSTM
+            dx, dh_prev, dc_prev, lstm_grads = self.lstm.backward(dh_total, dc_next, cache)
+            (dWf_step, dbf_step, dWi_step, dbi_step,
+            dWc_step, dbc_step, dWo_step, dbo_step) = lstm_grads
+
+            # Acumular gradientes del LSTM
+            g_lstm_Wf += dWf_step
+            g_lstm_bf += dbf_step
+            g_lstm_Wi += dWi_step
+            g_lstm_bi += dbi_step
+            g_lstm_Wc += dWc_step
+            g_lstm_bc += dbc_step
+            g_lstm_Wo += dWo_step
+            g_lstm_bo += dbo_step
+
+            # Gradientes para la capa de entrada (ReLU)
+            # dx ya es el gradiente respecto a z (salida de la capa anterior)
+            #dz = dx * (state["z"] > 0).astype(float)   # derivada ReLU
+            dz = dx * (state["z"] > 0).astype(float) + 1e-8 * dx   # evita ceros exactos
+            x_input = state["x"]  # es el input original de este paso
+            gW_in += np.outer(dz, x_input)
+            gb_in += dz
+
+            # Actualizar dh_next y dc_next para el paso anterior
+            dh_next = dh_prev
+            dc_next = dc_prev
+
+        # Una vez recorrido todo el episodio, aplicar la actualización de pesos
+        n = len(trajectories)
+        with self.lock:   # añade un lock si usas threading
+            self.W_actor   -= LR * clip_grad(gWa / n)
+            self.b_actor   -= LR * clip_grad(gba / n)
+            self.W_critic -= LR * clip_grad(gWc / n)
+            self.b_critic -= LR * clip_grad(gbc / n)
+            self.W_in       -= LR * clip_grad(gW_in / n)
+            self.b_in       -= LR * clip_grad(gb_in / n)
+            self.lstm.Wf    -= LR * clip_grad(g_lstm_Wf / n)
+            self.lstm.bf    -= LR * clip_grad(g_lstm_bf / n)
+            self.lstm.Wi    -= LR * clip_grad(g_lstm_Wi / n)
+            self.lstm.bi    -= LR * clip_grad(g_lstm_bi / n)
+            self.lstm.Wc    -= LR * clip_grad(g_lstm_Wc / n)
+            self.lstm.bc    -= LR * clip_grad(g_lstm_bc / n)
+            self.lstm.Wo    -= LR * clip_grad(g_lstm_Wo / n)
+            self.lstm.bo    -= LR * clip_grad(g_lstm_bo / n)
+    
     def _update_minibatch(self, batch):
         gW_in = np.zeros_like(self.W_in)
         gb_in = np.zeros_like(self.b_in)
@@ -270,3 +435,106 @@ class PPOActorCritic:
         except FileNotFoundError:
             print("[server] modelo nuevo")
 
+
+# -------------------------------------------------------
+# SERVIDOR
+# -------------------------------------------------------
+
+nn = PPOActorCritic()
+nn.load()
+
+# Hidden state del LSTM — se resetea por episodio
+h_state, c_state = nn.lstm.zero_state()
+
+# Buffer de trayectorias del episodio actual (para GAE)
+episode_buffer = []
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("127.0.0.1", 9999))
+print("[server] escuchando 127.0.0.1:9999")
+
+last_state = None
+last_actions = None
+
+while True:
+    data, addr = sock.recvfrom(65535)
+    msg = json.loads(data.decode())
+
+    if msg["type"] == "step":
+        x       = np.array(msg["inputs"], dtype=np.float64)
+        epsilon = msg.get("epsilon", 0.1)
+        reward  = msg.get("reward", 0.0)
+
+        state = nn.forward(x, h_state, c_state)
+        h_state = state["h"]
+        c_state = state["c"]
+
+        move_x, move_y, angle, shoot = nn.sample_action(state, epsilon)
+
+        # Guarda transición con log_prob para PPO
+        if last_state is not None and last_actions is not None:
+            old_lp = nn.log_prob(last_state, last_actions)
+            episode_buffer.append({
+                "state":        last_state,
+                "actions":      last_actions,
+                "old_log_prob": old_lp,
+                "reward":       reward,
+                "done":         False,
+            })
+
+        last_state   = state
+        last_actions = [move_x, move_y, angle, shoot]
+
+        resp = {
+            "move_dir":   [move_x, move_y],
+            "shot_angle": angle,
+            "action":     shoot,
+        }
+        sock.sendto(json.dumps(resp).encode(), addr)
+
+    elif msg["type"] == "episode_end":
+        final_reward = msg.get("reward", 0.0)
+
+        # Cierra la trayectoria con la recompensa terminal
+        if last_state is not None and last_actions is not None:
+            old_lp = nn.log_prob(last_state, last_actions)
+            episode_buffer.append({
+                "state":        last_state,
+                "actions":      last_actions,
+                "old_log_prob": old_lp,
+                "reward":       final_reward,
+                "done":         True,
+            })
+
+        # Calcula GAE sobre la trayectoria completa del episodio
+        if len(episode_buffer) >= 2:
+            rewards = [t["reward"] for t in episode_buffer]
+            values  = [t["state"]["value"] for t in episode_buffer]
+            dones   = [t["done"] for t in episode_buffer]
+            advantages, returns = nn.compute_gae(rewards, values, dones)
+            
+            trajectories = []
+            for i, tr in enumerate(episode_buffer):
+                trajectories.append({
+                    "state":        tr["state"],
+                    "actions":      tr["actions"],
+                    "old_log_prob": tr["old_log_prob"],
+                    "advantage":    float(advantages[i]),
+                    "return_":      float(returns[i]),
+                })
+            nn.bptt_update(trajectories)
+
+        nn.save()
+
+        # Reset para el próximo episodio
+        episode_buffer.clear()
+        last_state   = None
+        last_actions = None
+        h_state, c_state = nn.lstm.zero_state()  # CRÍTICO: resetea LSTM
+
+        print(
+            f"[server] ep {msg.get('episode','?')} "
+            f"| total={msg.get('total_reward', 0):.2f} "
+            f"| final={final_reward:.2f} "
+            f"| traj={len(trajectories) if 'trajectories' in dir() else 0}"
+        )
