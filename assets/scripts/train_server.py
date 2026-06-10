@@ -6,7 +6,7 @@ from collections import deque
 HOST = "127.0.0.1"
 PORT = 9999
 
-INPUTS    = 49
+INPUTS    = 40
 HIDDEN    = 128
 # Outputs: move_x, move_y, shot_angle, shoot_logit
 ACTOR_OUT = 4
