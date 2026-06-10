@@ -136,8 +136,7 @@ func get_inputs() -> Array:
 		time_since_last_shot = clamp(time_since_last_shot, 0.0, 1.0)
 	
 	var dist_to_center = global_position.distance_to(viewport_size / 2) / viewport_size.length()
-	
-	return [
+	var inputs = [
 		self.global_position.x / viewport_size.x, # Posicion del jefe en X
 		self.global_position.y / viewport_size.y, # Posicion del jefe en X
 		GlobalVars.shot_impact.x / viewport_size.x, # Ultimo impacto de bala en X
@@ -153,10 +152,9 @@ func get_inputs() -> Array:
 		player_vel.y, # Velocidad del jugador relativa al jefe Y
 		time_since_last_shot,
 		dist_to_center,
-		bullets_dist,
-		bullets_positions,
-		bullets_velocity
-	]
+		
+	] + bullets_dist + bullets_positions + bullets_velocity
+	return inputs
 
 func dead_if_can() -> void:
 	if health <= 0:

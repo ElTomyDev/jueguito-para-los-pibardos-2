@@ -18,6 +18,16 @@ radius = 238.03362
 collision_layer = 2
 collision_mask = 8
 script = ExtResource("1_agbej")
+max_health = null
+base_damage = null
+damage_increment = null
+max_damage = null
+max_phases = null
+force_attack_mode = null
+attack_forced = null
+max_speed = null
+acceleration_speed = null
+deceleration_speed = null
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 texture = ExtResource("2_e77qu")

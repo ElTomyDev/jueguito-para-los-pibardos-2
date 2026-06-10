@@ -11,21 +11,13 @@ ACTOR_OUT = 4
 
 GAMMA = 0.99
 
-LR_ACTOR = 0.0005
-LR_CRITIC = 0.0003
+LR_ACTOR = 0.0003
+LR_CRITIC = 0.001
 
 ENTROPY_BETA = 0.01
 
 MAX_GRAD = 1.0
 
-BEST_MODEL_PATH = "./assets/train_data/best_boss_brain.json"
-TRAIN_DATA_PATH = "./assets/train_data/train_data.json"
-
-BEST_WINDOW = 20
-MIN_IMPROVEMENT = 5.0
-
-best_avg_reward = -float("inf")
-episode_rewards = []
 
 # --------------------------------------------------
 # UTILIDADES
@@ -45,7 +37,7 @@ def clip_grad(g):
 
 class ActorCritic:
 
-    def __init__(self) -> None:
+    def __init__(self):
 
         s1 = np.sqrt(2.0 / INPUTS)
         s2 = np.sqrt(2.0 / HIDDEN)
@@ -59,7 +51,7 @@ class ActorCritic:
         self.W_critic = np.random.randn(1, HIDDEN) * s2
         self.b_critic = np.zeros(1)
 
-    def forward(self, x) -> dict:
+    def forward(self, x):
 
         z1 = self.W1 @ x + self.b1
 
@@ -87,7 +79,14 @@ class ActorCritic:
             "value": value
         }
 
-    def train_step(self, state, next_state, reward, done, action) -> None:
+    def train_step(
+        self,
+        state,
+        next_state,
+        reward,
+        done,
+        action
+    ):
 
         value = state["value"]
 
@@ -118,16 +117,29 @@ class ActorCritic:
 
         d_actor_raw = np.zeros(ACTOR_OUT)
 
-        p = np.clip(state["shoot_prob"], 1e-6, 1.0 - 1e-6)
+        p = np.clip(
+            state["shoot_prob"],
+            1e-6,
+            1.0 - 1e-6
+        )
 
         # Policy Gradient Bernoulli
 
-        d_actor_raw[3] = -(action - p) * advantage
+        d_actor_raw[3] = (
+            -(action - p)
+            * advantage
+        )
 
-        # Entropy
+        # Entropy Bonus
+
         entropy_grad = np.log(p / (1.0 - p))
 
-        d_actor_raw[3] += ENTROPY_BETA * entropy_grad * p * (1.0 - p)
+        d_actor_raw[3] += (
+            ENTROPY_BETA
+            * entropy_grad
+            * p
+            * (1.0 - p)
+        )
 
         # ------------------------------------
         # Backprop Actor
@@ -177,7 +189,7 @@ class ActorCritic:
         self.W1 -= LR_ACTOR * grad_w1
         self.b1 -= LR_ACTOR * grad_b1
 
-    def save(self, path="./assets/train_data/boss_brain.json") -> None:
+    def save(self, path="./assets/train_data/boss_brain.json"):
 
         data = {
             "W1": self.W1.tolist(),
@@ -191,7 +203,7 @@ class ActorCritic:
         with open(path, "w") as f:
             json.dump(data, f)
 
-    def load(self, path="./assets/train_data/boss_brain.json") -> None:
+    def load(self, path="./assets/train_data/boss_brain.json"):
 
         try:
 
@@ -213,109 +225,6 @@ class ActorCritic:
 
             print("[server] modelo nuevo")
 
-    def save_best(self, path=BEST_MODEL_PATH) -> None:
-
-        data = {
-            "W1": self.W1.tolist(),
-            "b1": self.b1.tolist(),
-
-            "W_actor": self.W_actor.tolist(),
-            "b_actor": self.b_actor.tolist(),
-
-            "W_critic": self.W_critic.tolist(),
-            "b_critic": self.b_critic.tolist()
-        }
-
-        with open(path, "w") as f:
-            json.dump(data, f)
-
-        print(
-            f"[BEST] modelo guardado -> {path}"
-        )
-
-def load_train_data() -> None:
-
-    global best_avg_reward
-    global episode_rewards
-
-    try:
-
-        with open(TRAIN_DATA_PATH, "r") as f:
-
-            data = json.load(f)
-
-        best_avg_reward = data.get(
-            "best_avg_reward",
-            -float("inf")
-        )
-
-        episode_rewards = data.get(
-            "episodes_rewards",
-            []
-        )
-
-        print(
-            f"[stats] cargadas "
-            f"{len(episode_rewards)} rewards"
-        )
-
-    except FileNotFoundError:
-
-        print(
-            "[stats] train_data.json nuevo"
-        )
-
-def save_train_data() -> None:
-    data = {
-
-        "best_avg_reward": float(
-            best_avg_reward
-        ),
-
-        "episode_rewards": episode_rewards
-    }
-
-    with open(TRAIN_DATA_PATH, "w") as f:
-
-        json.dump(
-            data,
-            f,
-            indent=4
-        )
-
-def update_best_model(nn, episode_reward) -> None:
-    global best_avg_reward
-    global episode_rewards
-
-    episode_rewards.append(
-        float(episode_reward)
-    )
-
-    if len(episode_rewards) < BEST_WINDOW:
-
-        save_train_data()
-        return
-
-    avg_reward = np.mean(
-        episode_rewards[-BEST_WINDOW:]
-    )
-
-    if avg_reward > (
-        best_avg_reward
-        + MIN_IMPROVEMENT
-    ):
-
-        best_avg_reward = avg_reward
-
-        nn.save_best()
-
-        print(
-            "[BEST] "
-            f"nuevo promedio="
-            f"{avg_reward:.2f}"
-        )
-
-    save_train_data()
 
 # --------------------------------------------------
 # SERVIDOR
@@ -332,6 +241,7 @@ print(f"[server] escuchando {HOST}:{PORT}")
 last_state = None
 last_action = 0
 
+
 while True:
 
     data, addr = sock.recvfrom(65535)
@@ -339,21 +249,31 @@ while True:
     msg = json.loads(data.decode())
 
     if msg["type"] == "step":
-
-        x = np.array(msg["inputs"], dtype=np.float64)
+        print(len(msg["inputs"]))
+        print(msg["inputs"])
+        x = np.array(
+            msg["inputs"],
+            dtype=np.float64
+        )
 
         state = nn.forward(x)
 
         p_shoot = state["shoot_prob"]
 
-        action = 1 if np.random.rand() < p_shoot else 0
+        action = (
+            1 if np.random.rand() < p_shoot
+            else 0
+        )
 
         move_dir = [
             float(state["move_x"]),
             float(state["move_y"])
         ]
 
-        reward = msg.get("reward", 0.0)
+        reward = msg.get(
+            "reward",
+            0.0
+        )
 
         if last_state is not None:
 
@@ -374,15 +294,23 @@ while True:
             "action": action
         }
 
-        sock.sendto(json.dumps(resp).encode(), addr)
+        sock.sendto(
+            json.dumps(resp).encode(),
+            addr
+        )
 
     elif msg["type"] == "episode_end":
 
-        reward = msg.get("reward",0.0)
+        reward = msg.get(
+            "reward",
+            0.0
+        )
 
         if last_state is not None:
 
-            dummy = nn.forward(np.zeros(INPUTS))
+            dummy = nn.forward(
+                np.zeros(INPUTS)
+            )
 
             nn.train_step(
                 last_state,
@@ -394,30 +322,11 @@ while True:
 
         nn.save()
 
-        total_reward = msg.get(
-            "total_reward",
-            reward
-        )
-
-        update_best_model(
-            nn,
-            total_reward
-        )
-
         last_state = None
-
-        window_avg = (
-            np.mean(
-                episode_rewards[-BEST_WINDOW:]
-            )
-            if len(episode_rewards) >= 1
-            else 0.0
-        )
 
         print(
             f"[server] episodio "
             f"{msg.get('episode', '?')} "
-            f"| reward={total_reward:.2f}"
-            f" | avg20={window_avg:.2f}"
-            f" | best={best_avg_reward:.2f}"
+            f"| reward="
+            f"{msg.get('total_reward', '?'):.2f}"
         )
