@@ -271,6 +271,7 @@ class PPOActorCritic:
             ratio = np.exp(np.clip(new_lp - old_lp, -10, 10))
             clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
             v_pred = state["value"]
+            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
             entropy = -(p * np.log(p) + (1-p) * np.log(1-p))
             entropy += 0.5 * np.sum(np.log(2 * np.pi * np.e * state["std"] ** 2))
 
@@ -287,7 +288,6 @@ class PPOActorCritic:
 
             
             # Para la acción discreta:
-            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
             eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
             d_raw[3] = -eff * adv * (actions[3] - p)
             d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
@@ -512,16 +512,17 @@ class PPOActorCritic:
         return h_final, c_final
         
     def save(self, path="./assets/train_data/boss_brain.json") -> None:
-        data = {
-            "W_in": self.W_in.tolist(), "b_in": self.b_in.tolist(),
-            "W_actor": self.W_actor.tolist(), "b_actor": self.b_actor.tolist(),
-            "W_critic": self.W_critic.tolist(), "b_critic": self.b_critic.tolist(),
-            "log_std": self.log_std.tolist(),
-            "lstm_Wf": self.lstm.Wf.tolist(), "lstm_bf": self.lstm.bf.tolist(),
-            "lstm_Wi": self.lstm.Wi.tolist(), "lstm_bi": self.lstm.bi.tolist(),
-            "lstm_Wc": self.lstm.Wc.tolist(), "lstm_bc": self.lstm.bc.tolist(),
-            "lstm_Wo": self.lstm.Wo.tolist(), "lstm_bo": self.lstm.bo.tolist(),
-        }
+        with self.lock:
+            data = {
+                "W_in": self.W_in.tolist(), "b_in": self.b_in.tolist(),
+                "W_actor": self.W_actor.tolist(), "b_actor": self.b_actor.tolist(),
+                "W_critic": self.W_critic.tolist(), "b_critic": self.b_critic.tolist(),
+                "log_std": self.log_std.tolist(),
+                "lstm_Wf": self.lstm.Wf.tolist(), "lstm_bf": self.lstm.bf.tolist(),
+                "lstm_Wi": self.lstm.Wi.tolist(), "lstm_bi": self.lstm.bi.tolist(),
+                "lstm_Wc": self.lstm.Wc.tolist(), "lstm_bc": self.lstm.bc.tolist(),
+                "lstm_Wo": self.lstm.Wo.tolist(), "lstm_bo": self.lstm.bo.tolist(),
+            }
         with open(path, "w") as f:
             json.dump(data, f)
 
