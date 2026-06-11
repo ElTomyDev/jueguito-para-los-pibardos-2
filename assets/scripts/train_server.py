@@ -607,8 +607,8 @@ while True:
                 })
             traj_len = len(trajectories)
             def update_and_save(traj) -> None:
-                nn.ppo_chunk_update(traj)
-                #nn.bptt_update(traj)
+                #nn.ppo_chunk_update(traj)
+                nn.bptt_update(traj)
                 nn.save()
                 
             threading.Thread(target=update_and_save, args=(trajectories,), daemon=True).start()
