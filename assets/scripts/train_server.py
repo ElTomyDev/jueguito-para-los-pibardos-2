@@ -271,9 +271,6 @@ class PPOActorCritic:
             ratio = np.exp(np.clip(new_lp - old_lp, -10, 10))
             clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
             v_pred = state["value"]
-            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
-            entropy = -(p * np.log(p) + (1-p) * np.log(1-p))
-            entropy += 0.5 * np.sum(np.log(2 * np.pi * np.e * state["std"] ** 2))
 
             # Gradientes para actor y critic (igual que antes)
             d_raw = np.zeros(ACTOR_OUT)
@@ -288,6 +285,7 @@ class PPOActorCritic:
 
             
             # Para la acción discreta:
+            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
             eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
             d_raw[3] = -eff * adv * (actions[3] - p)
             d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
