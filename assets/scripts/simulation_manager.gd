@@ -15,10 +15,10 @@ var viewport_size: Vector2
 # -------------------------------------------------------
 
 # Terminales  (se suman una sola vez al final)
-const REWARD_WIN              : float =  1.0
-const REWARD_LOSE             : float = -1.0
-const REWARD_FAST_WIN_BONUS   : float =   0.02   # por step restante al ganar
-const REWARD_FAST_LOSE_BONUS  : float =  -0.01   # por step restante al perder rápido
+const REWARD_WIN              : float =  3.0
+const REWARD_TIMEOUT             : float = -2.0
+const REWARD_FAST_WIN_BONUS   : float =   2.0   # por step restante al ganar
+const REWARD_FAST_LOSE_BONUS  : float =  -0.01   # por step restante al perder rápido (no se usa)
 
 # Por step (escala ~[-1, 1] por step para que en 600 steps → [-600, 600] simétrico)
 const R_MOVING                : float =  0.05    # moverse
@@ -84,44 +84,53 @@ func _calculate_reward() -> float:
 	var p = GlobalVars.players[0]
 	var b = GlobalVars.boss
 	var reward = 0.0
-
-	# 1. Daño infligido al jugador (positivo)
+	
+	# --- 1. Daño infligido al jugador ---
+	# Normalizado: matar al jugador de un golpe = +1.0
 	var damage_dealt = last_player_health - p.health
 	if damage_dealt > 0.0:
-		# Normalizado entre 0 y 1 (si mata al jugador, da +1)
-		reward += (damage_dealt / p.max_health) * 10.0
-
-	# 2. Daño recibido (negativo)
+		reward += clamp(damage_dealt / p.max_health, 0.0, 1.0)
+	
+	# --- 2. Daño recibido ---
+	# Normalizado: misma escala que el daño infligido
 	var damage_taken = last_boss_health - b.health
 	if damage_taken > 0.0:
-		reward -= damage_taken / b.max_health
-
-	# 3. Penalización por paso (incentiva ganar rápido)
-	reward -= 0.01
-
-	# 4. Bonus extra por matar al jugador (opcional, refuerza la victoria)
+		reward -= clamp(damage_taken / b.max_health, 0.0, 1.0) * 0.5
+		# 0.5 porque queremos que atacar sea más rentable que defenderse,
+		# pero que esquivar siga importando
+	
+	# --- 3. Bonus por esquivar balas activas ---
+	# Si hay balas cerca y el boss se alejó de ellas, reward positivo
+	if is_instance_valid(b.near_bullet):
+		var dist_now = b.global_position.distance_to(b.near_bullet.global_position)
+		var dist_norm = clamp(dist_now / viewport_size.length(), 0.0, 1.0)
+		reward += dist_norm * 0.05  # incentivo suave por estar lejos de balas
+	
+	# --- 4. Penalización por inactividad ---
+	# Solo si el boss está en acción 0 (nada) — no penalizar el movimiento
+	if b.current_action == 0:
+		reward -= 0.002
+	else:
+		reward -= 0.001  # penalización mínima por paso para cualquier acción
+	
+	# --- 5. Victoria anticipada (se activa solo una vez) ---
 	if p.health <= 0.0:
-		reward += 1.0   # para que el agente note que ganó
+		reward += 5.0
 	
-	"""if b.current_action == 1:
-		var dist = b.global_position.distance_to(p.global_position)
-		var dist_norm = clamp(dist / viewport_size.length(), 0.0, 1.0)
-		reward += (1.0 - dist_norm) * 0.05  # incentiva acercarse"""
-	
-	# Actualizar historial para el próximo paso
 	last_player_health = p.health
-	last_boss_health = b.health
-
+	last_boss_health   = b.health
 	return reward
 
 func _calculate_final_reward() -> float:
 	var steps_remaining = GlobalConst.MAX_STEP_FOR_EPISODE - GlobalVars.current_step
+	var time_bonus = steps_remaining / float(GlobalConst.MAX_STEP_FOR_EPISODE)
 	if GlobalVars.players.is_empty():
-		return REWARD_WIN  + steps_remaining * REWARD_FAST_WIN_BONUS
+		return REWARD_WIN + time_bonus * REWARD_FAST_WIN_BONUS
 	elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
-		return REWARD_LOSE + steps_remaining * REWARD_FAST_LOSE_BONUS
+		return REWARD_TIMEOUT
 	else:
-		return REWARD_LOSE  # timeout = derrota
+		var hp_ratio = 1.0 - (GlobalVars.players[0].health / GlobalVars.players[0].max_health)
+		return -1.0 + hp_ratio
 
 func _handle_episode_end() -> void:
 	is_resetting = true
