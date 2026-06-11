@@ -103,9 +103,10 @@ func _calculate_reward() -> float:
 	if p.health <= 0.0:
 		reward += 1.0   # para que el agente note que ganó
 	
-	var dist = b.global_position.distance_to(p.global_position)
-	var dist_norm = clamp(dist / viewport_size.length(), 0.0, 1.0)
-	reward += (1.0 - dist_norm) * 0.05  # incentiva acercarse
+	if b.current_action == 1:
+		var dist = b.global_position.distance_to(p.global_position)
+		var dist_norm = clamp(dist / viewport_size.length(), 0.0, 1.0)
+		reward += (1.0 - dist_norm) * 0.05  # incentiva acercarse
 	
 	# Actualizar historial para el próximo paso
 	last_player_health = p.health
