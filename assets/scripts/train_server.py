@@ -16,6 +16,8 @@ MAX_GRAD    = 0.5
 CHUNK_LEN  = 64    # largo de cada chunk contiguo
 EPOCHS     = 4     # pasadas sobre el episodio por update
 
+is_updating = False
+
 def sigmoid(x) -> float:
     return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
 
@@ -603,9 +605,10 @@ while True:
                     "advantage":    float(advantages[i]),
                     "return_":      float(returns[i]),
                 })
-            #nn.bptt_update(trajectories)
-            nn.ppo_chunk_update(trajectories)
             traj_len = len(trajectories)
+            #t = threading.Thread(target=nn.bptt_update, args=(trajectories,), daemon=True)
+            t = threading.Thread(target=nn.ppo_chunk_update, args=(trajectories,), daemon=True)
+            t.start()
 
         nn.save()
 

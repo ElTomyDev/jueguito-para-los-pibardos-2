@@ -137,8 +137,11 @@ func _handle_episode_end() -> void:
 	_reset_health_tracking()
 
 func _reset_health_tracking() -> void:
-	await get_tree().physics_frame
-	await get_tree().physics_frame
+	# Espera hasta que boss y player estén efectivamente en el árbol
+	var timeout = 0
+	while (not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty()) and timeout < 60:
+		await get_tree().physics_frame
+		timeout += 1
 	
 	if is_instance_valid(GlobalVars.boss):
 		last_boss_health = GlobalVars.boss.health
