@@ -92,7 +92,7 @@ func _auto_shot() -> void:
 	if auto_shot_timer >= rand_shot:
 			rand_shot = randi_range(20, 50)
 			auto_move_timer = 0
-	if GlobalVars.current_episode > 0:
+	if GlobalVars.current_episode >= 0:
 		if GlobalVars.current_step % rand_shot == 0:
 			shot_attack._shot(Utils.view_to(
 			shot_attack.global_position,

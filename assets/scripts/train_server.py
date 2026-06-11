@@ -606,17 +606,20 @@ while True:
                     "return_":      float(returns[i]),
                 })
             traj_len = len(trajectories)
-            #t = threading.Thread(target=nn.bptt_update, args=(trajectories,), daemon=True)
-            t = threading.Thread(target=nn.ppo_chunk_update, args=(trajectories,), daemon=True)
-            t.start()
-
-        nn.save()
+            def update_and_save(traj) -> None:
+                nn.ppo_chunk_update(traj)
+                #nn.bptt_update(traj)
+                nn.save()
+                
+            threading.Thread(target=update_and_save, args=(trajectories,), daemon=True).start()
+        else:
+            nn.save()
 
         # Reset para el próximo episodio
         episode_buffer.clear()
         last_state   = None
         last_actions = None
-        h_state, c_state = nn.lstm.zero_state()  # CRÍTICO: resetea LSTM
+        h_state, c_state = nn.lstm.zero_state()
 
         
         print(
