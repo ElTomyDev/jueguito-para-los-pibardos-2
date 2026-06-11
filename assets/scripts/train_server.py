@@ -13,6 +13,8 @@ LR          = 0.0001
 CLIP_EPS    = 0.2       # clip de PPO
 ENTROPY_B   = 0.01
 MAX_GRAD    = 0.5
+CHUNK_LEN  = 64    # largo de cada chunk contiguo
+EPOCHS     = 4     # pasadas sobre el episodio por update
 
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
