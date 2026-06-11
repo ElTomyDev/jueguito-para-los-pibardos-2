@@ -60,7 +60,7 @@ func _physics_process(_delta: float) -> void:
 	GlobalVars.current_step += 1
 	
 	var current_inputs: Array = _get_inputs_for_nn()
-	var epsilon: float = max(0.05, 0.3 - GlobalVars.current_episode * 0.0001)
+	var epsilon: float = max(0.02, 0.5 * exp(-GlobalVars.current_episode * 0.002))
 	var reward: float  = _calculate_reward()
 	GlobalVars.current_reward += reward
 	

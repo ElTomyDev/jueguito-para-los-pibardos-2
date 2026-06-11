@@ -24,6 +24,14 @@ def sigmoid(x) -> float:
 def clip_grad(g) -> any:
     return np.clip(g, -MAX_GRAD, MAX_GRAD)
 
+def ppo_eff_ratio(ratio, clipped_ratio, adv) -> float:
+    loss_unclipped = ratio * adv
+    loss_clipped   = clipped_ratio * adv
+    # PPO toma el mínimo: si el término sin clip ya es menor, se usa ratio.
+    # Si el clipeado es menor (clip activo), gradiente = 0.
+    return ratio if loss_unclipped <= loss_clipped else 0.0
+
+
 class LSTMCell:
     """LSTM minimal implementado en numpy"""
     def __init__(self, input_size, hidden_size) -> None:
@@ -79,25 +87,23 @@ class LSTMCell:
         cache:  diccionario guardado en forward()
         Retorna: dx, dh_prev, dc_prev, gradientes de los pesos
         """
-        x = cache["x"]
-        h_prev = cache["h_prev"]
-        c_prev = cache["c_prev"]
         xh = cache["xh"]
         f = cache["f"]
         i = cache["i"]
-        c_tilde = cache["c_tilde"]
         o = cache["o"]
+        c_tilde = cache["c_tilde"]
+        c_prev = cache["c_prev"]
         c_new = cache["c_new"]
 
         # Gradiente de la salida
         do = dh_next * np.tanh(c_new)
-        do = do * o * (1 - o)                # sigmoid derivative
+        do = do * o * (1 - o) # sigmoid derivative
+        
+        # Gradiente de c_new que viene de h_new a través del tanh
         dc_from_o = dh_next * o * (1 - np.tanh(c_new)**2)
 
         # Gradiente de la celda
         dc = dc_next + dc_from_o
-        tanh_c = np.tanh(c_new)
-        dc = dc * (1 - tanh_c**2)         # tanh derivative
         dc = np.clip(dc, -10.0, 10.0)
 
         # Gradientes de las compuertas
@@ -148,13 +154,21 @@ class PPOActorCritic:
         self.log_std = np.clip(self.log_std, -5.0, 2.0)
 
     def forward(self, x, h, c) -> dict:
-        z = np.maximum(0.0, self.W_in @ x + self.b_in)  # ReLU
+        with self.lock:
+            W_in    = self.W_in.copy()
+            b_in    = self.b_in.copy()
+            W_actor = self.W_actor.copy()
+            b_actor = self.b_actor.copy()
+            W_critic= self.W_critic.copy()
+            b_critic= self.b_critic.copy()
+            log_std = self.log_std.copy()
+
+        z = np.maximum(0.0, W_in @ x + b_in)  # ReLU
         h_new, c_new, cache = self.lstm.forward(z, h, c)
 
-        actor_raw  = self.W_actor  @ h_new + self.b_actor
-        value      = float((self.W_critic @ h_new + self.b_critic)[0])
-
-        std        = np.exp(self.log_std)
+        actor_raw  = W_actor  @ h_new + b_actor
+        value      = float((W_critic @ h_new + b_critic)[0])
+        std        = np.exp(log_std)
         means      = np.tanh(actor_raw[:3])
         shoot_prob = sigmoid(actor_raw[3])
 
@@ -169,6 +183,13 @@ class PPOActorCritic:
             "std": std,
             "shoot_prob": shoot_prob,
             "value": value,
+            "_W_actor": W_actor,
+            "_b_actor": b_actor,
+            "_W_critic": W_critic,
+            "_b_critic": b_critic,
+            "_W_in": W_in,
+            "_b_in": b_in,
+
         }
 
     def sample_action(self, state, epsilon=0.1) -> any:
@@ -247,10 +268,9 @@ class PPOActorCritic:
 
             # ----- Pérdida PPO (igual que antes) -----
             new_lp = self.log_prob(state, actions)
-            ratio = np.exp(np.clip(new_lp - old_lp, -5, 5))
+            ratio = np.exp(np.clip(new_lp - old_lp, -10, 10))
             clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
             v_pred = state["value"]
-            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
             entropy = -(p * np.log(p) + (1-p) * np.log(1-p))
             entropy += 0.5 * np.sum(np.log(2 * np.pi * np.e * state["std"] ** 2))
 
@@ -262,13 +282,13 @@ class PPOActorCritic:
             for idx in range(3):
                 a_exec = float(np.clip(actions[idx], -0.999, 0.999))
                 mu = state["means"][idx]
-                # Usa el ratio efectivo según cuál término del min es menor
-                eff = ratio if ratio * adv < clipped_ratio * adv else 0.0
+                eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
                 d_raw[idx] = -eff * adv * (a_exec - mu) / (std[idx] ** 2 + 1e-8)
 
-            # Para la acción discreta:
-            eff = ratio if ratio * adv < clipped_ratio * adv else 0.0
             
+            # Para la acción discreta:
+            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
+            eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
             d_raw[3] = -eff * adv * (actions[3] - p)
             d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
 
@@ -430,6 +450,7 @@ class PPOActorCritic:
             # PPO ratio con log_prob recalculado sobre el estado fresco
             new_lp = self.log_prob(fs, actions)
             ratio  = np.exp(np.clip(new_lp - old_lp, -10, 10))
+            clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
 
             # Gradiente actor (continuo + discreto)
             d_raw = np.zeros(ACTOR_OUT)
@@ -437,9 +458,12 @@ class PPOActorCritic:
             for idx in range(3):
                 mu = fs["means"][idx]
                 a  = float(np.clip(actions[idx], -0.999, 0.999))
-                d_raw[idx] = -ratio * adv * (a - mu) / (std[idx]**2 + 1e-8)
+                eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
+                d_raw[idx] = -eff * adv * (a - mu) / (std[idx]**2 + 1e-8)
+            
             p = np.clip(fs["shoot_prob"], 1e-6, 1 - 1e-6)
-            d_raw[3]  = -ratio * adv * (actions[3] - p)
+            eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
+            d_raw[3]  = -eff * adv * (actions[3] - p)
             d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
 
             # Gradiente critic
@@ -475,14 +499,15 @@ class PPOActorCritic:
 
         # ---- Aplicar gradientes ----
         m = len(chunk)
-        self.W_actor  -= LR * clip_grad(gWa / m)
-        self.b_actor  -= LR * clip_grad(gba / m)
-        self.W_critic -= LR * clip_grad(gWc / m)
-        self.b_critic -= LR * clip_grad(gbc / m)
-        self.W_in     -= LR * clip_grad(gW_in / m)
-        self.b_in     -= LR * clip_grad(gb_in / m)
-        for k in g_lstm:
-            getattr(self.lstm, k)[:] -= LR * clip_grad(g_lstm[k] / m)
+        with self.lock:
+            self.W_actor  -= LR * clip_grad(gWa / m)
+            self.b_actor  -= LR * clip_grad(gba / m)
+            self.W_critic -= LR * clip_grad(gWc / m)
+            self.b_critic -= LR * clip_grad(gbc / m)
+            self.W_in     -= LR * clip_grad(gW_in / m)
+            self.b_in     -= LR * clip_grad(gb_in / m)
+            for k in g_lstm:
+                getattr(self.lstm, k)[:] -= LR * clip_grad(g_lstm[k] / m)
 
         return h_final, c_final
         
