@@ -89,7 +89,7 @@ func _calculate_reward() -> float:
 	var damage_dealt = last_player_health - p.health
 	if damage_dealt > 0.0:
 		# Normalizado entre 0 y 1 (si mata al jugador, da +1)
-		reward += damage_dealt / p.max_health
+		reward += (damage_dealt / p.max_health) * 10.0
 
 	# 2. Daño recibido (negativo)
 	var damage_taken = last_boss_health - b.health
@@ -97,12 +97,16 @@ func _calculate_reward() -> float:
 		reward -= damage_taken / b.max_health
 
 	# 3. Penalización por paso (incentiva ganar rápido)
-	reward -= 0.01
+	reward -= 0.001
 
 	# 4. Bonus extra por matar al jugador (opcional, refuerza la victoria)
 	if p.health <= 0.0:
 		reward += 1.0   # para que el agente note que ganó
-
+	
+	var dist = b.global_position.distance_to(p.global_position)
+	var dist_norm = clamp(dist / viewport_size.length(), 0.0, 1.0)
+	reward += (1.0 - dist_norm) * 0.05  # incentiva acercarse
+	
 	# Actualizar historial para el próximo paso
 	last_player_health = p.health
 	last_boss_health = b.health

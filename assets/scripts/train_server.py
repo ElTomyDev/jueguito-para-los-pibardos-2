@@ -13,9 +13,6 @@ LR          = 0.0001
 CLIP_EPS    = 0.2       # clip de PPO
 ENTROPY_B   = 0.01
 MAX_GRAD    = 0.5
-EPOCHS      = 4         # épocas por batch en PPO
-BATCH_SIZE  = 256
-MINI_BATCH  = 64
 
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
@@ -41,6 +38,7 @@ class LSTMCell:
         self.Wo = np.random.randn(hidden_size, input_size + hidden_size) * s
         self.bo = np.zeros(hidden_size)
 
+        self.input_size = input_size
         self.hidden_size = hidden_size
 
     def forward(self, x, h_prev, c_prev):
@@ -117,8 +115,8 @@ class LSTMCell:
 
         # Gradiente para la entrada xh (concat de x y h_prev)
         dxh = (self.Wf.T @ df) + (self.Wi.T @ di) + (self.Wc.T @ dc_tilde) + (self.Wo.T @ do_input)
-        dx = dxh[:self.hidden_size]          # porque input_size == hidden_size en este diseño
-        dh_prev = dxh[self.hidden_size:]
+        dx = dxh[:self.lstm.input_size]      # primeros input_size elementos
+        dh_prev = dxh[self.lstm.input_size:] # los siguientes hidden_size
         dc_prev = dc * f
 
         return dx, dh_prev, dc_prev, (dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo)
@@ -327,6 +325,157 @@ class PPOActorCritic:
             self.lstm.Wo    -= LR * clip_grad(g_lstm_Wo / n)
             self.lstm.bo    -= LR * clip_grad(g_lstm_bo / n)
     
+    def ppo_chunk_update(self, trajectories):
+        """
+        Divide el episodio en chunks contiguos de CHUNK_LEN steps.
+        Por cada época, recorre los chunks en orden y propaga h/c
+        entre ellos para mantener el contexto del LSTM intacto.
+        
+        Ventajas sobre bptt_update() en episodios de 900 steps:
+        - El gradiente retrocede solo CHUNK_LEN pasos → no se desvanece
+        - EPOCHS pasadas → más updates por episodio (EPOCHS * n_chunks)
+        - h/c se propagan hacia adelante → el LSTM retiene contexto
+        """
+        n = len(trajectories)
+        if n < 2:
+            return
+
+        # Arma lista de chunks: índices [start, end)
+        chunks = []
+        for start in range(0, n, CHUNK_LEN):
+            end = min(start + CHUNK_LEN, n)
+            chunks.append((start, end))
+
+        for epoch in range(EPOCHS):
+            # Reinicia el estado oculto al comienzo de cada época
+            h_chunk = np.zeros(self.lstm.hidden_size)
+            c_chunk = np.zeros(self.lstm.hidden_size)
+
+            for (start, end) in chunks:
+                chunk = trajectories[start:end]
+                h_chunk, c_chunk = self._update_chunk(
+                    chunk, h_chunk, c_chunk
+                )
+
+def _update_chunk(self, chunk, h_init, c_init):
+    """
+    Hace un paso de BPTT sobre un chunk contiguo.
+    
+    - Forward pass: recorre el chunk propagando h/c desde h_init/c_init
+    - Backward pass: BPTT solo sobre el chunk (no sobre el episodio entero)
+    - Retorna el h/c final para pasarle al próximo chunk
+    
+    Nota: re-ejecuta el forward con h_init/c_init en lugar de usar
+    los caches guardados, porque esos caches corresponden al estado
+    del episodio original (sin el h correcto para este chunk).
+    """
+    # Inicializar gradientes acumulados
+    gW_in = np.zeros_like(self.W_in)
+    gb_in = np.zeros_like(self.b_in)
+    gWa   = np.zeros_like(self.W_actor)
+    gba   = np.zeros_like(self.b_actor)
+    gWc   = np.zeros_like(self.W_critic)
+    gbc   = np.zeros_like(self.b_critic)
+    g_lstm = {k: np.zeros_like(getattr(self.lstm, k))
+              for k in ("Wf","bf","Wi","bi","Wc","bc","Wo","bo")}
+
+    # ---- Forward pass del chunk ----
+    # Re-ejecuta con h_init/c_init para tener los caches correctos
+    h, c = h_init.copy(), c_init.copy()
+    fresh_states = []
+    for tr in chunk:
+        x = tr["state"]["x"]
+        z = np.maximum(0.0, self.W_in @ x + self.b_in)
+        h, c, lstm_cache = self.lstm.forward(z, h, c)
+
+        actor_raw  = self.W_actor  @ h + self.b_actor
+        value      = float((self.W_critic @ h + self.b_critic)[0])
+        std        = np.exp(self.log_std)
+        means      = np.tanh(actor_raw[:3])
+        shoot_prob = sigmoid(actor_raw[3])
+
+        fresh_states.append({
+            "x": x, "z": z, "h": h, "c": c,
+            "lstm_cache": lstm_cache,
+            "actor_raw": actor_raw,
+            "means": means, "std": std,
+            "shoot_prob": shoot_prob,
+            "value": value,
+        })
+
+    h_final, c_final = h.copy(), c.copy()
+
+    # ---- Backward pass (BPTT truncado al chunk) ----
+    dh_next = np.zeros(self.lstm.hidden_size)
+    dc_next = np.zeros(self.lstm.hidden_size)
+
+    for i, (tr, fs) in enumerate(
+            zip(reversed(chunk), reversed(fresh_states))):
+        adv    = tr["advantage"]
+        ret    = tr["return_"]
+        old_lp = tr["old_log_prob"]
+        actions = tr["actions"]
+
+        # PPO ratio con log_prob recalculado sobre el estado fresco
+        new_lp = self.log_prob(fs, actions)
+        ratio  = np.exp(np.clip(new_lp - old_lp, -10, 10))
+
+        # Gradiente actor (continuo + discreto)
+        d_raw = np.zeros(ACTOR_OUT)
+        std   = fs["std"]
+        for idx in range(3):
+            mu = fs["means"][idx]
+            a  = float(np.clip(actions[idx], -0.999, 0.999))
+            d_raw[idx] = -ratio * adv * (a - mu) / (std[idx]**2 + 1e-8)
+        p = np.clip(fs["shoot_prob"], 1e-6, 1 - 1e-6)
+        d_raw[3]  = -ratio * adv * (actions[3] - p)
+        d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
+
+        # Gradiente critic
+        d_val = fs["value"] - ret
+
+        # Acumular cabezas
+        gWa += np.outer(d_raw, fs["h"])
+        gba += d_raw
+        gWc += d_val * fs["h"]
+        gbc += d_val
+
+        # Gradiente hacia h desde las cabezas + BPTT acumulado
+        dh = self.W_actor.T @ d_raw + self.W_critic.T[:, 0] * d_val
+        dh_total = np.clip(dh + dh_next, -5.0, 5.0)
+        dc_next  = np.clip(dc_next, -5.0, 5.0)
+
+        dx, dh_prev, dc_prev, lstm_grads = self.lstm.backward(
+            dh_total, dc_next, fs["lstm_cache"]
+        )
+        (dWf, dbf, dWi, dbi, dWc_l, dbc, dWo, dbo) = lstm_grads
+
+        g_lstm["Wf"] += dWf;  g_lstm["bf"] += dbf
+        g_lstm["Wi"] += dWi;  g_lstm["bi"] += dbi
+        g_lstm["Wc"] += dWc_l; g_lstm["bc"] += dbc
+        g_lstm["Wo"] += dWo;  g_lstm["bo"] += dbo
+
+        dz     = dx * (fs["z"] > 0).astype(float)
+        gW_in += np.outer(dz, fs["x"])
+        gb_in += dz
+
+        dh_next = dh_prev
+        dc_next = dc_prev
+
+    # ---- Aplicar gradientes ----
+    m = len(chunk)
+    with self.lock:
+        self.W_actor  -= LR * clip_grad(gWa / m)
+        self.b_actor  -= LR * clip_grad(gba / m)
+        self.W_critic[0] -= LR * clip_grad(gWc / m)
+        self.b_critic[0] -= LR * clip_grad(gbc / m)
+        self.W_in     -= LR * clip_grad(gW_in / m)
+        self.b_in     -= LR * clip_grad(gb_in / m)
+        for k in g_lstm:
+            getattr(self.lstm, k)[:] -= LR * clip_grad(g_lstm[k] / m)
+
+    return h_final, c_final
+    
     def _update_minibatch(self, batch):
         gW_in = np.zeros_like(self.W_in)
         gb_in = np.zeros_like(self.b_in)
@@ -522,7 +671,8 @@ while True:
                     "advantage":    float(advantages[i]),
                     "return_":      float(returns[i]),
                 })
-            nn.bptt_update(trajectories)
+            #nn.bptt_update(trajectories)
+            nn.ppo_chunk_update(trajectories)
 
         nn.save()
 
