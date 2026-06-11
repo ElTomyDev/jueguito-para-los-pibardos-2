@@ -97,7 +97,7 @@ func _calculate_reward() -> float:
 		reward -= damage_taken / b.max_health
 
 	# 3. Penalización por paso (incentiva ganar rápido)
-	reward -= 0.001
+	reward -= 0.01
 
 	# 4. Bonus extra por matar al jugador (opcional, refuerza la victoria)
 	if p.health <= 0.0:
