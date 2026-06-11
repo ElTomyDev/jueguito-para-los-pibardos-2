@@ -93,7 +93,7 @@ func _init_boss_values() -> void:
 		return
 	gun_damage = 0.0
 	rotation_speed = 25.0
-	fire_rate = 1.5
+	fire_rate = 0.8
 	fire_timer = 0.0
 	bullet_life_time = 2.3
 	bullet_dispersion = 1.0

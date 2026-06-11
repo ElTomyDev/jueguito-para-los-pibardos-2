@@ -5,7 +5,7 @@ import socket
 
 # Hiperparámetros PPO
 INPUTS      = 40
-HIDDEN      = 128
+HIDDEN      = 256
 ACTOR_OUT   = 4
 GAMMA       = 0.99
 LAMBDA      = 0.95      # GAE lambda
@@ -247,8 +247,8 @@ class PPOActorCritic:
 
             # ----- Pérdida PPO (igual que antes) -----
             new_lp = self.log_prob(state, actions)
-            ratio = np.exp(np.clip(new_lp - old_lp, -10, 10))
-            clipped = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv
+            ratio = np.exp(np.clip(new_lp - old_lp, -5, 5))
+            clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
             v_pred = state["value"]
             p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
             entropy = -(p * np.log(p) + (1-p) * np.log(1-p))
@@ -257,11 +257,19 @@ class PPOActorCritic:
             # Gradientes para actor y critic (igual que antes)
             d_raw = np.zeros(ACTOR_OUT)
             std = state["std"]
+
+            # Para outputs continuos:
             for idx in range(3):
                 a_exec = float(np.clip(actions[idx], -0.999, 0.999))
                 mu = state["means"][idx]
-                d_raw[idx] = -ratio * adv * (a_exec - mu) / (std[idx] ** 2 + 1e-8)
-            d_raw[3] = -ratio * adv * (actions[3] - p)
+                # Usa el ratio efectivo según cuál término del min es menor
+                eff = ratio if ratio * adv < clipped_ratio * adv else 0.0
+                d_raw[idx] = -eff * adv * (a_exec - mu) / (std[idx] ** 2 + 1e-8)
+
+            # Para la acción discreta:
+            eff = ratio if ratio * adv < clipped_ratio * adv else 0.0
+            
+            d_raw[3] = -eff * adv * (actions[3] - p)
             d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
 
             # Gradientes actor/critic
@@ -307,12 +315,12 @@ class PPOActorCritic:
             gb_in += dz
 
             # Actualizar dh_next y dc_next para el paso anterior
-            dh_next = dh_prev
-            dc_next = dc_prev
+            dh_next = np.clip(dh_prev, -5.0, 5.0)
+            dc_next = np.clip(dc_prev, -5.0, 5.0)
 
         # Una vez recorrido todo el episodio, aplicar la actualización de pesos
         n = len(trajectories)
-        with self.lock:   # añade un lock si usas threading
+        with self.lock:
             self.W_actor   -= LR * clip_grad(gWa / n)
             self.b_actor   -= LR * clip_grad(gba / n)
             self.W_critic -= LR * clip_grad(gWc / n)
@@ -467,15 +475,14 @@ class PPOActorCritic:
 
         # ---- Aplicar gradientes ----
         m = len(chunk)
-        with self.lock:
-            self.W_actor  -= LR * clip_grad(gWa / m)
-            self.b_actor  -= LR * clip_grad(gba / m)
-            self.W_critic -= LR * clip_grad(gWc / m)
-            self.b_critic -= LR * clip_grad(gbc / m)
-            self.W_in     -= LR * clip_grad(gW_in / m)
-            self.b_in     -= LR * clip_grad(gb_in / m)
-            for k in g_lstm:
-                getattr(self.lstm, k)[:] -= LR * clip_grad(g_lstm[k] / m)
+        self.W_actor  -= LR * clip_grad(gWa / m)
+        self.b_actor  -= LR * clip_grad(gba / m)
+        self.W_critic -= LR * clip_grad(gWc / m)
+        self.b_critic -= LR * clip_grad(gbc / m)
+        self.W_in     -= LR * clip_grad(gW_in / m)
+        self.b_in     -= LR * clip_grad(gb_in / m)
+        for k in g_lstm:
+            getattr(self.lstm, k)[:] -= LR * clip_grad(g_lstm[k] / m)
 
         return h_final, c_final
         
@@ -606,9 +613,11 @@ while True:
                     "return_":      float(returns[i]),
                 })
             traj_len = len(trajectories)
+            #nn.bptt_update(trajectories)
+            #threading.Thread(target=nn.save, daemon=True).start()
             def update_and_save(traj) -> None:
-                #nn.ppo_chunk_update(traj)
                 nn.bptt_update(traj)
+                #nn.ppo_chunk_update(traj)
                 nn.save()
                 
             threading.Thread(target=update_and_save, args=(trajectories,), daemon=True).start()
