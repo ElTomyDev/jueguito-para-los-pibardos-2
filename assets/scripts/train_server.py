@@ -376,7 +376,7 @@ class PPOActorCritic:
         gWa   = np.zeros_like(self.W_actor)
         gba   = np.zeros_like(self.b_actor)
         gWc   = np.zeros_like(self.W_critic)
-        gbc   = np.zeros_like(self.b_critic)
+        gbc = np.zeros(1) 
         g_lstm = {k: np.zeros_like(getattr(self.lstm, k))
                 for k in ("Wf","bf","Wi","bi","Wc","bc","Wo","bo")}
 
@@ -439,7 +439,7 @@ class PPOActorCritic:
             gWa += np.outer(d_raw, fs["h"])
             gba += d_raw
             gWc += np.outer(np.array([d_val]), fs["h"])
-            gbc += d_val
+            gbc += np.array([d_val])
 
             # Gradiente hacia h desde las cabezas + BPTT acumulado
             dh = self.W_actor.T @ d_raw + self.W_critic.T[:, 0] * d_val
@@ -469,7 +469,7 @@ class PPOActorCritic:
             self.W_actor  -= LR * clip_grad(gWa / m)
             self.b_actor  -= LR * clip_grad(gba / m)
             self.W_critic -= LR * clip_grad(gWc / m)
-            self.b_critic[0] -= LR * clip_grad(gbc / m)
+            self.b_critic -= LR * clip_grad(gbc / m)
             self.W_in     -= LR * clip_grad(gW_in / m)
             self.b_in     -= LR * clip_grad(gb_in / m)
             for k in g_lstm:
@@ -612,6 +612,7 @@ while True:
         last_actions = None
         h_state, c_state = nn.lstm.zero_state()  # CRÍTICO: resetea LSTM
 
+        
         print(
             f"[server] ep {msg.get('episode','?')} "
             f"| total={msg.get('total_reward', 0):.2f} "
