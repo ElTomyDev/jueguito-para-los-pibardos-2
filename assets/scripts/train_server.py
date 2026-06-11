@@ -584,8 +584,10 @@ while True:
                 "reward":       final_reward,
                 "done":         True,
             })
-
+            
+        
         # Calcula GAE sobre la trayectoria completa del episodio
+        traj_len = 0
         if len(episode_buffer) >= 2:
             rewards = [t["reward"] for t in episode_buffer]
             values  = [t["state"]["value"] for t in episode_buffer]
@@ -603,6 +605,7 @@ while True:
                 })
             #nn.bptt_update(trajectories)
             nn.ppo_chunk_update(trajectories)
+            traj_len = len(trajectories)
 
         nn.save()
 
@@ -617,5 +620,5 @@ while True:
             f"[server] ep {msg.get('episode','?')} "
             f"| total={msg.get('total_reward', 0):.2f} "
             f"| final={final_reward:.2f} "
-            f"| traj={len(trajectories) if 'trajectories' in dir() else 0}"
+            f"| traj={traj_len}"
         )
