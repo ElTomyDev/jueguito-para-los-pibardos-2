@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import json
 import threading
@@ -239,6 +241,7 @@ class PPOServer:
 
         self.file_lock = threading.Lock()
         self.model_lock = threading.Lock()
+        self.sock_lock = threading.Lock()
 
         print(f"[server] Escuchando.. {host}:{port}")
         self._reset_hidden()
@@ -333,7 +336,7 @@ class PPOServer:
             })
 
         # Reset completo para el próximo episodio
-        buffer_copy = self.episode_buffer.copy()
+        buffer_copy = copy.deepcopy(self.episode_buffer)
         self.episode_buffer.clear()
         self.last_state = None
         self.last_action = None
@@ -354,102 +357,6 @@ class PPOServer:
             # Sin entrenamiento, responder inmediatamente
             self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), client_addr)
             print(f"[server] ep {episode_num} (sin entrenamiento) | reward={total_reward:.2f} | steps={len(buffer_copy)}")
-
-    def _update_policy(self) -> tuple:
-        buf = self.episode_buffer
-        T   = len(buf)
-
-        # ── 1. Construir tensores planos (T, ...) ──────────────────────
-        states       = torch.cat([t["state"]   for t in buf], dim=0)          # (T, INPUTS)
-        actions      = torch.cat([t["action"]  for t in buf], dim=0)          # (T, 4)
-        old_lp       = torch.tensor([t["old_log_prob"] for t in buf], device=device)  # (T,)
-        rewards_raw  = torch.tensor([t["reward"] for t in buf], dtype=torch.float32, device=device)
-        dones        = torch.tensor([t["done"]   for t in buf], dtype=torch.float32, device=device)
-        values_old   = torch.tensor([t["value"]  for t in buf], dtype=torch.float32, device=device)
-
-        # ── 2. GAE sobre la secuencia completa ────────────────────────
-        # Normalizamos rewards antes del GAE para estabilidad
-        if rewards_raw.std() < 1e-8:
-            rewards = rewards_raw - rewards_raw.mean()
-        else:
-            rewards = (rewards_raw - rewards_raw.mean()) / (rewards_raw.std() + 1e-8)
-
-        advantages = torch.zeros(T, device=device)
-        gae = 0.0
-        for t in reversed(range(T)):
-            next_val = 0.0 if dones[t] else (values_old[t + 1].item() if t + 1 < T else 0.0)
-            delta    = rewards[t] + GAMMA * next_val - values_old[t]
-            gae      = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
-            advantages[t] = gae
-
-        returns    = advantages + values_old
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        # ── 3. Partir en chunks y hacer mini-batches ──────────────────
-        # Calculamos cuántos chunks completos entran
-        n_chunks = T // CHUNK_LEN
-        if n_chunks == 0:
-            n_chunks = 1                   # episodio muy corto: un chunk incompleto
-            chunk_len = T
-        else:
-            chunk_len = CHUNK_LEN
-
-        # Recortamos al múltiplo exacto para simplificar el stack
-        T_used = n_chunks * chunk_len
-
-        # Índices de inicio de cada chunk: [0, chunk_len, 2*chunk_len, ...]
-        chunk_starts = list(range(0, T_used, chunk_len))
-
-        # Extraemos el hidden state al inicio de cada chunk (shape: (1,1,HIDDEN) → (1,B,HIDDEN))
-        def stack_hidden(key_h, key_c, starts) -> tuple:
-            h = torch.cat([buf[i][key_h] for i in starts], dim=1)  # (1, B, HIDDEN)
-            c = torch.cat([buf[i][key_c] for i in starts], dim=1)
-            return (h, c)
-
-        last_loss = torch.tensor(0.0)
-
-        for _ in range(EPOCHS):
-            # Mezclamos el orden de los chunks en cada época
-            perm = torch.randperm(n_chunks).tolist()
-
-            for chunk_idx in perm:
-                start = chunk_starts[chunk_idx]
-                end   = start + chunk_len
-
-                # Slices del chunk — shape (chunk_len, ...)
-                s_chunk  = states[start:end].unsqueeze(0)    # (1, T_chunk, INPUTS)
-                a_chunk  = actions[start:end].unsqueeze(0)   # (1, T_chunk, 4)
-                lp_chunk = old_lp[start:end]                  # (T_chunk,)
-                adv_chunk = advantages[start:end]             # (T_chunk,)
-                ret_chunk = returns[start:end]                # (T_chunk,)
-
-                # Hidden states al inicio del chunk
-                a_h0 = (buf[start]["actor_h0"],  buf[start]["actor_c0"])
-                c_h0 = (buf[start]["critic_h0"], buf[start]["critic_c0"])
-
-                # Re-propagamos el LSTM sobre el chunk completo
-                with self.model_lock:
-                    log_probs_seq, values_seq, entropy = self.net.evaluate(s_chunk, a_chunk, a_h0, c_h0)
-
-                # Aplanamos (1, T_chunk) → (T_chunk,)
-                log_probs_seq = log_probs_seq.squeeze(0)
-                values_seq    = values_seq.squeeze(0)
-
-                # PPO clipping
-                ratio  = (log_probs_seq - lp_chunk).exp()
-                surr1  = ratio * adv_chunk
-                surr2  = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv_chunk
-                actor_loss  = -torch.min(surr1, surr2).mean()
-                critic_loss = nn.functional.mse_loss(values_seq, ret_chunk)
-                loss        = actor_loss + 0.5 * critic_loss - ENTROPY_B * entropy
-
-                self.optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(self.net.parameters(), MAX_GRAD_NORM)
-                self.optimizer.step()
-                last_loss = loss
-
-        return advantages, returns, last_loss.item()
 
     def _update_policy_from_buffer(self, buffer) -> tuple:
         T = len(buffer)
@@ -499,8 +406,8 @@ class PPOServer:
                 adv_chunk = advantages[start:end]
                 ret_chunk = returns[start:end]
 
-                a_h0 = (buffer[start]["actor_h0"], buffer[start]["actor_c0"])
-                c_h0 = (buffer[start]["critic_h0"], buffer[start]["critic_c0"])
+                a_h0 = (buffer[start]["actor_h0"].detach(), buffer[start]["actor_c0"].detach())
+                c_h0 = (buffer[start]["critic_h0"].detach(), buffer[start]["critic_c0"].detach())
 
                 with self.model_lock:
                     log_probs_seq, values_seq, entropy = self.net.evaluate(s_chunk, a_chunk, a_h0, c_h0)
@@ -543,7 +450,8 @@ class PPOServer:
             print(f"[server] Error en entrenamiento del episodio {episode_num}: {e}")
         finally:
             # Notificar al cliente que puede continuar
-            self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), client_addr)
+            with self.sock_lock:
+                self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), client_addr)
 
     # -------------------------------------------
     # --- Actualizacion y Control de archivos ---
@@ -605,7 +513,8 @@ class PPOServer:
             msg = json.loads(data.decode())
             if msg["type"] == "step":
                 resp = self.process_step(msg)
-                self.sock.sendto(json.dumps(resp).encode(), addr)
+                with self.sock_lock:
+                    self.sock.sendto(json.dumps(resp).encode(), addr)
             elif msg["type"] == "episode_end":
                 self.process_episode_end(msg, addr)
 

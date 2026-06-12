@@ -16,18 +16,18 @@ var viewport_size: Vector2
 
 # Terminales  (se suman una sola vez al final)
 # --- Recompensas terminales ---
-const TERM_WIN_BASE          : float = 50.0   # Victoria: matar al jugador
-const TERM_WIN_BONUS_MAX     : float = 10.0   # Bono adicional por tiempo restante (multiplicado por fracción de tiempo)
-const TERM_LOSE              : float = -10.0  # Derrota: boss muere
-const TERM_TIMEOUT_MAX_PEN   : float = -5.0   # Penalización base por timeout (luego se multiplica por salud restante del jugador)
+const TERM_WIN_BASE          : float = 100.0  # Victoria: matar al jugador
+const TERM_LOSE              : float = -50.0  # Derrota: boss muere
+const TERM_TIMEOUT_MAX_PEN   : float = -20.0  # Penalización base por timeout (luego se multiplica por salud restante del jugador)
 
 # --- Recompensas por paso (eventos) ---
-const R_DAMAGE_DEALT_MAX     : float = 5.0    # Por dañar al jugador
-const R_DAMAGE_TAKEN_MAX     : float = -20.0  # Por perder vida
-const R_PROXIMITY_MAX        : float = 0.005  # Por estar pegado al jugador
-const R_CLOSING_DIST_MAX     : float = 0.01   # Por acercarse al jugador
-const R_GOOD_AIM             : float = 0.05   # Por apuntar bien
-const R_NEAR_BULLET          : float = 3.0    # Por la bala pasar cerca del jugador
+const R_DAMAGE_DEALT_MAX     : float = 10.0   # Por dañar al jugador
+const R_DAMAGE_TAKEN_MAX     : float = -5.0   # Por perder vida
+const R_PROXIMITY_MAX        : float = 0.02   # Por estar pegado al jugador
+const R_CLOSING_DIST_MAX     : float = 0.05   # Por acercarse al jugador
+const R_GOOD_AIM             : float = 0.2    # Por apuntar bien
+const R_NEAR_BULLET          : float = 5.0    # Por la bala pasar cerca del jugador
+const R_LIFE_STEP            : float = 0.001  # Por mantenerse con vida en cada paso
 
 # NN
 var nn_client: NNClient
@@ -77,6 +77,8 @@ func _calculate_reward() -> float:
 	var p = GlobalVars.players[0]
 	var b = GlobalVars.boss
 	var reward = 0.0
+	
+	reward += R_LIFE_STEP
 	
 	# --- Daño infligido al jugador ---
 	var damage_dealt = last_player_health - p.health
@@ -131,7 +133,7 @@ func _calculate_final_reward() -> float:
 	
 	# Victoria: jugador muerto
 	if GlobalVars.players.is_empty() or (GlobalVars.players[0].health <= 0.0):
-		return TERM_WIN_BASE + time_bonus * TERM_WIN_BONUS_MAX
+		return TERM_WIN_BASE + time_bonus
 	
 	# Derrota: boss muerto
 	elif is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
