@@ -13,7 +13,7 @@ const HIT_HISTORY_SIZE = 5
 
 @export_category("Boss Stats")
 @export var max_health: float = 10000.0
-@export var base_damage: float = 100.0
+@export var base_damage: float = 200.0
 @export var damage_increment: float = 0.1
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2

@@ -22,14 +22,12 @@ const TERM_LOSE              : float = -10.0  # Derrota: boss muere
 const TERM_TIMEOUT_MAX_PEN   : float = -5.0   # Penalización base por timeout (luego se multiplica por salud restante del jugador)
 
 # --- Recompensas por paso (eventos) ---
-const R_DAMAGE_DEALT_MAX     : float = 5.0   # Por matar al jugador (escala lineal con daño hecho)
-const R_DAMAGE_TAKEN_MAX     : float = -20.0   # Por perder toda la vida del boss (penalización)
-const R_PROXIMITY_MAX        : float = 0.005    # Por estar pegado al jugador (max)
-const R_CLOSING_DIST_MAX     : float = 0.01    # Por acercarse al jugador (por cambio normalizado)
-const R_DODGE_MAX            : float = 0.8    # Por estar lejos de balas peligrosas
-const R_ACTION_IDLE_PENALTY  : float = -0.02  # Por hacer "nada" (acción 0)
-const R_ACTION_OTHER_BONUS   : float = 0.01   # Pequeña recompensa por cualquier acción (moverse o atacar)
-const R_GOOD_AIM             : float = 0.05    # Por apuntar bien
+const R_DAMAGE_DEALT_MAX     : float = 5.0    # Por dañar al jugador
+const R_DAMAGE_TAKEN_MAX     : float = -20.0  # Por perder vida
+const R_PROXIMITY_MAX        : float = 0.005  # Por estar pegado al jugador
+const R_CLOSING_DIST_MAX     : float = 0.01   # Por acercarse al jugador
+const R_GOOD_AIM             : float = 0.05   # Por apuntar bien
+const R_NEAR_BULLET          : float = 3.0    # Por la bala pasar cerca del jugador
 
 # NN
 var nn_client: NNClient
@@ -39,7 +37,7 @@ var last_boss_health  : float = 0.0
 var last_player_health: float = 0.0
 var last_dist_to_bullet: float = 0.0
 var last_dist_to_player: float = 0.0
-
+var last_shot_impact: Vector2 = Vector2.ZERO
 var is_resetting: bool = false
 
 func _ready() -> void:
@@ -115,17 +113,12 @@ func _calculate_reward() -> float:
 			var aim_reward = (1.0 - angle_diff / PI) * R_GOOD_AIM  # reducido a 0.05
 			reward += aim_reward
 	
-	"""# --- Esquive de balas ---
-	if is_instance_valid(b.near_bullet):
-		var bullet_dist = b.global_position.distance_to(b.near_bullet.global_position)
-		var bullet_dist_norm = clamp(bullet_dist / max_dist, 0.0, 1.0)
-		reward += bullet_dist_norm * R_DODGE_MAX"""
-	
-	# --- Penalización por inactividad y recompensa por otras acciones ---
-	if b.current_action == 0:
-		reward += R_ACTION_IDLE_PENALTY
-	else:
-		reward += R_ACTION_OTHER_BONUS
+	# --- Si la bala pasa cerca del jugador ---
+	if GlobalVars.shot_impact != last_shot_impact:
+		var dist_to_player = GlobalVars.shot_impact.distance_to(p.global_position)
+		if dist_to_player < 100.0:
+			reward += R_NEAR_BULLET  # La bala del boss llegó cerca del jugador
+		last_shot_impact = GlobalVars.shot_impact
 	
 	# Actualizar valores para el próximo paso
 	last_player_health = p.health
