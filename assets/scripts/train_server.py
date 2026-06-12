@@ -285,17 +285,17 @@ class PPOServer:
         # Guardamos la transición del step ANTERIOR (ahora ya tenemos su reward)
         if self.last_state is not None:
             self.episode_buffer.append({
-                "state":         self.last_state,               # (1, INPUTS)
-                "action":        self.last_action,              # (1, 4)
+                "state":         self.last_state.clone(),               # (1, INPUTS)
+                "action":        self.last_action.clone(),              # (1, 4)
                 "old_log_prob":  self.last_log_prob,            # float
                 "reward":        reward,                        # float
                 "done":          False,
                 "value":         self.last_value,               # float
                 # Hiddens al inicio del step — necesarios para re-propagar en update
-                "actor_h0":      self.last_actor_hidden[0],    # (1, 1, HIDDEN)
-                "actor_c0":      self.last_actor_hidden[1],
-                "critic_h0":     self.last_critic_hidden[0],
-                "critic_c0":     self.last_critic_hidden[1],
+                "actor_h0":      self.last_actor_hidden[0].clone(),    # (1, 1, HIDDEN)
+                "actor_c0":      self.last_actor_hidden[1].clone(),
+                "critic_h0":     self.last_critic_hidden[0].clone(),
+                "critic_c0":     self.last_critic_hidden[1].clone(),
             })
 
         # Guardamos el estado actual como "último" para el próximo step
@@ -338,7 +338,7 @@ class PPOServer:
             })
 
         # Reset completo para el próximo episodio
-        buffer_copy = copy.deepcopy(self.episode_buffer)
+        buffer_copy = list(self.episode_buffer)
         self.episode_buffer.clear()
         self.last_state = None
         self.last_action = None

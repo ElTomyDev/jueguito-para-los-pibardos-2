@@ -224,7 +224,7 @@ func _update_action(delta) -> void:
 
 @warning_ignore("unused_parameter")
 func _nothing_action(delta: float) -> void:
-	damage += damage_increment
+	damage += min(damage + damage_increment, max_damage)
 
 func _ball_attack_action(delta: float) -> void:
 	if damage > base_damage:

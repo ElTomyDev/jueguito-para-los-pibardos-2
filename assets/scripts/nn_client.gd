@@ -34,3 +34,13 @@ func notify_episode_end(episode: int, total_reward: float, final_reward: float):
 		"reward": final_reward
 	})
 	_socket.put_packet(msg.to_utf8_buffer())
+	
+	var t = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t < 10000:  # timeout 10s
+		if _socket.get_available_packet_count() > 0:
+			var raw = _socket.get_packet()
+			var resp = JSON.parse_string(raw.get_string_from_utf8())
+			if resp and resp.get("type") == "episode_ready":
+				return
+		OS.delay_msec(5)
+	push_warning("NNClient: timeout esperando episode_ready")
