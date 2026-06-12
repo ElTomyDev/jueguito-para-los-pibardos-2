@@ -51,14 +51,19 @@ func _physics_process(_delta: float) -> void:
 	if is_resetting: return
 	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty(): return
 	
+	nn_client.poll()
+	
 	GlobalVars.current_step += 1
 	
 	var current_inputs: Array = _get_inputs_for_nn()
 	var reward: float  = _calculate_reward()
 	GlobalVars.current_reward += reward
 	
-	var response = nn_client.request_action(current_inputs, reward)
+	# Solo enviar si no hay una petición activa
+	if not nn_client.is_busy():
+		nn_client.request_action(current_inputs, reward)
 	
+	var response = nn_client.get_last_action()
 	GlobalVars.nn_outputs["move_dir"]   = response.get("move_dir",   [0.0, 0.0])
 	GlobalVars.nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
 	GlobalVars.nn_outputs["action"]     = response.get("action",     0)

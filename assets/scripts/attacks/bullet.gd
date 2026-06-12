@@ -33,6 +33,7 @@ func _physics_process(delta: float) -> void:
 	move_bullet(delta)
 	move_and_slide()
 
+@warning_ignore("unused_parameter")
 func move_bullet(delta:float) -> void:
 	self.velocity = dir_to_mirror.normalized() * speed
 
