@@ -146,12 +146,19 @@ func _calculate_final_reward() -> float:
 		var player_hp_ratio = GlobalVars.players[0].health / GlobalVars.players[0].max_health
 		# Penalización proporcional a la salud que le queda al jugador (menos salud = menos penalización)
 		return TERM_TIMEOUT_MAX_PEN * (1.0 - player_hp_ratio)
+	
+	
 
 func _handle_episode_end() -> void:
 	is_resetting = true
 	
 	var final_reward: float = _calculate_final_reward()
 	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward)
+	
+	# Guarda la mejor recompensa
+	if GlobalVars.current_reward > GlobalVars.best_avg_reward:
+		GlobalVars.best_avg_reward = GlobalVars.current_reward
+		GlobalVars.best_avg_episode = GlobalVars.current_episode
 	_save_train_data()
 	
 	GlobalVars.episode_rewards.append(GlobalVars.current_reward)

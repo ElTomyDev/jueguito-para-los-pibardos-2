@@ -43,6 +43,9 @@ class PPOActorCritic(nn.Module):
 
         # Inicialización
         self.apply(self._init_weights)
+        nn.init.orthogonal_(self.actor_mean.weight, gain=0.01)
+        nn.init.orthogonal_(self.actor_shoot.weight, gain=0.01)
+        nn.init.orthogonal_(self.critic.weight, gain=1.0)
 
     def _init_weights(self, module) -> None:
         if isinstance(module, nn.Linear):
