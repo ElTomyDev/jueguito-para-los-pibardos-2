@@ -224,7 +224,8 @@ class PPOServer:
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((host, port))
-
+        self.sock.settimeout(0.001)
+        
         # Buffer del episodio — cada entrada es un dict con todo lo necesario
         self.episode_buffer = []
 
