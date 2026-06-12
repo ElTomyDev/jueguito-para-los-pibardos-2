@@ -130,7 +130,7 @@ func _chill_shot_state() -> void:
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
-				GlobalVars.boss.global_position + Vector2(randf_range(-50, 50), randf_range(-50, 50)),
+				GlobalVars.boss.global_position + Vector2(randf_range(-150, 150), randf_range(-150, 150)),
 				100.0,
 				shot_attack,
 				false
@@ -143,7 +143,7 @@ func _normal_shot_state() -> void:
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
-				GlobalVars.boss.global_position + Vector2(randf_range(-20, 20), randf_range(-20, 20)),
+				GlobalVars.boss.global_position + Vector2(randf_range(-100, 100), randf_range(-100, 100)),
 				100.0,
 				shot_attack,
 				false
@@ -156,7 +156,7 @@ func _hard_shot_state() -> void:
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
-				GlobalVars.boss.global_position + Vector2(randf_range(-10, 10), randf_range(-10, 10)),
+				GlobalVars.boss.global_position + Vector2(randf_range(-50, 50), randf_range(-50, 50)),
 				100.0,
 				shot_attack,
 				false

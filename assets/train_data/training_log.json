@@ -1,0 +1,6 @@
+{"episode": 5, "total_reward": 10.8675790406196, "final_reward": 0.0, "steps": 2287, "mean_advantage": 5.003975456219223e-09, "mean_return": 0.013559959828853607, "loss": 0.1700960099697113, "timestamp": 1781291926.3655615}
+{"episode": 12, "total_reward": 17.2044055303291, "final_reward": -8.0, "steps": 1857, "mean_advantage": 2.567782098061855e-10, "mean_return": -0.0007165381102822721, "loss": 55.1723518371582, "timestamp": 1781292092.1350543}
+{"episode": 18, "total_reward": 9.5520723364066, "final_reward": 0.0, "steps": 1628, "mean_advantage": 6.1508478310656756e-09, "mean_return": 0.01927577517926693, "loss": 0.14880599081516266, "timestamp": 1781292218.1422577}
+{"episode": 25, "total_reward": 10.2851446028042, "final_reward": 0.0, "steps": 2298, "mean_advantage": 1.867508370168025e-09, "mean_return": -0.1547037661075592, "loss": 0.1687108427286148, "timestamp": 1781292410.510643}
+{"episode": 28, "total_reward": 7.37492387296135, "final_reward": 0.0, "steps": 505, "mean_advantage": 4.721160129506075e-10, "mean_return": 0.2531158924102783, "loss": 8.132864952087402, "timestamp": 1781292443.7988088}
+{"episode": 30, "total_reward": 9.26599759174123, "final_reward": 0.0, "steps": 649, "mean_advantage": 2.5715409801563283e-09, "mean_return": 0.2737407982349396, "loss": 0.2427501231431961, "timestamp": 1781292497.6337898}
