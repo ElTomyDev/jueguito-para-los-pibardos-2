@@ -275,15 +275,9 @@ class PPOServer:
             "loss": float(loss),
             "timestamp": time.time()
         }
-        # Cargar log existente
-        if os.path.exists(self.training_log_path):
-            with open(self.training_log_path, "a") as f:
-                f.write(json.dumps(log_entry) + "\n")
-        else:
-            log = []
-        log.append(log_entry)
-        with open(self.training_log_path, "w") as f:
-            json.dump(log, f, indent=2)
+        with open(self.training_log_path, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    
     
     def save_model(self, path="./assets/train_data/boss_brain.json") -> None:
         # Convertir a dict de numpy para guardar en JSON (compatible con el juego)

@@ -29,7 +29,7 @@ const R_CLOSING_DIST_MAX     : float = 0.01    # Por acercarse al jugador (por c
 const R_DODGE_MAX            : float = 0.8    # Por estar lejos de balas peligrosas
 const R_ACTION_IDLE_PENALTY  : float = -0.02  # Por hacer "nada" (acción 0)
 const R_ACTION_OTHER_BONUS   : float = 0.01   # Pequeña recompensa por cualquier acción (moverse o atacar)
-const R_GOOD_AIM             : float = 0.3    # Por apuntar bien
+const R_GOOD_AIM             : float = 0.05    # Por apuntar bien
 
 # NN
 var nn_client: NNClient
@@ -112,7 +112,7 @@ func _calculate_reward() -> float:
 			var angle_diff = abs(wrapf(
 				atan2(p.global_position.y - b.global_position.y,
 					  p.global_position.x - b.global_position.x) - b.shot_angle,-PI, PI))
-			var aim_reward = (1.0 - angle_diff / PI) * 0.05  # reducido a 0.05
+			var aim_reward = (1.0 - angle_diff / PI) * R_GOOD_AIM  # reducido a 0.05
 			reward += aim_reward
 	
 	"""# --- Esquive de balas ---
@@ -149,8 +149,6 @@ func _calculate_final_reward() -> float:
 		var player_hp_ratio = GlobalVars.players[0].health / GlobalVars.players[0].max_health
 		# Penalización proporcional a la salud que le queda al jugador (menos salud = menos penalización)
 		return TERM_TIMEOUT_MAX_PEN * (1.0 - player_hp_ratio)
-	
-	
 
 func _handle_episode_end() -> void:
 	is_resetting = true
@@ -247,13 +245,20 @@ func _spawn_entities() -> void:
 		player_instance.global_position = player_spawn_point.global_position
 		boss_instance.global_position   = boss_spawn_point.global_position
 	else:
+		var margin_spawn: float = 80.0
 		var margin: float  = 200.0
 		var max_attempts   = 20
 		var player_pos     := Vector2.ZERO
 		var boss_pos       := Vector2.ZERO
 		for _i in range(max_attempts):
-			player_pos = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
-			boss_pos   = Vector2(randf_range(0.0, viewport_size.x), randf_range(0.0, viewport_size.y))
+			player_pos = Vector2(
+				randf_range(margin_spawn, viewport_size.x - margin_spawn),
+				randf_range(margin_spawn, viewport_size.y - margin_spawn)
+			)
+			boss_pos   = Vector2(
+				randf_range(margin_spawn, viewport_size.x - margin_spawn),
+				randf_range(margin_spawn, viewport_size.y - margin_spawn)
+			)
 			if player_pos.distance_to(boss_pos) >= margin:
 				break
 		player_instance.global_position = player_pos
