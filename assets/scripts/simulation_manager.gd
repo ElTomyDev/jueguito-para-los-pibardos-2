@@ -16,7 +16,7 @@ var viewport_size: Vector2
 
 # Terminales  (se suman una sola vez al final)
 # --- Recompensas terminales ---
-const TERM_WIN_BASE          : float = 20.0   # Victoria: matar al jugador
+const TERM_WIN_BASE          : float = 50.0   # Victoria: matar al jugador
 const TERM_WIN_BONUS_MAX     : float = 10.0   # Bono adicional por tiempo restante (multiplicado por fracción de tiempo)
 const TERM_LOSE              : float = -10.0  # Derrota: boss muere
 const TERM_TIMEOUT_MAX_PEN   : float = -5.0   # Penalización base por timeout (luego se multiplica por salud restante del jugador)
@@ -56,11 +56,10 @@ func _physics_process(_delta: float) -> void:
 	GlobalVars.current_step += 1
 	
 	var current_inputs: Array = _get_inputs_for_nn()
-	var epsilon: float = max(0.02, 0.3 * exp(-GlobalVars.current_episode * 0.01))
 	var reward: float  = _calculate_reward()
 	GlobalVars.current_reward += reward
 	
-	var response = nn_client.request_action(current_inputs, reward, epsilon)
+	var response = nn_client.request_action(current_inputs, reward)
 	
 	GlobalVars.nn_outputs["move_dir"]   = response.get("move_dir",   [0.0, 0.0])
 	GlobalVars.nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
@@ -108,9 +107,13 @@ func _calculate_reward() -> float:
 	
 	# --- Incentivo por atacar (acción 1) ---
 	if b.current_action == 1:
-		var angle_diff = abs(wrapf(atan2(p.global_position.y - b.global_position.y, p.global_position.x - b.global_position.x) - b.shot_angle, -PI, PI))
-		var aim_reward = (1.0 - angle_diff / PI) * R_GOOD_AIM
-		reward += aim_reward
+		var steps_since_shot = GlobalVars.current_step - b.shot_attack.last_shot_step
+		if steps_since_shot < 30:  # disparó en los últimos ~0.5s
+			var angle_diff = abs(wrapf(
+				atan2(p.global_position.y - b.global_position.y,
+					  p.global_position.x - b.global_position.x) - b.shot_angle,-PI, PI))
+			var aim_reward = (1.0 - angle_diff / PI) * 0.05  # reducido a 0.05
+			reward += aim_reward
 	
 	"""# --- Esquive de balas ---
 	if is_instance_valid(b.near_bullet):

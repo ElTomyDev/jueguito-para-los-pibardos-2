@@ -204,6 +204,7 @@ class PPOServer:
         actions = torch.cat([t["action"] for t in self.episode_buffer], dim=0)
         old_log_probs = torch.tensor([t["old_log_prob"] for t in self.episode_buffer], device=device)
         rewards = torch.tensor([t["reward"] for t in self.episode_buffer], dtype=torch.float32, device=device)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
         dones = torch.tensor([t["done"] for t in self.episode_buffer], dtype=torch.float32, device=device)
         values = torch.tensor([t["value"] for t in self.episode_buffer], dtype=torch.float32, device=device)
 
@@ -276,8 +277,8 @@ class PPOServer:
         }
         # Cargar log existente
         if os.path.exists(self.training_log_path):
-            with open(self.training_log_path, "r") as f:
-                log = json.load(f)
+            with open(self.training_log_path, "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
         else:
             log = []
         log.append(log_entry)

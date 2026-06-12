@@ -10,12 +10,11 @@ func _init() -> void:
 	_socket = PacketPeerUDP.new()
 	_socket.connect_to_host(_host, _port)
 
-func request_action(inputs: Array, reward: float, epsilon: float) -> Dictionary:
+func request_action(inputs: Array, reward: float) -> Dictionary:
 	var msg = JSON.stringify({
 		"type": "step",
 		"inputs": inputs,
 		"reward": reward,
-		"epsilon": epsilon
 	})
 	_socket.put_packet(msg.to_utf8_buffer())
 
