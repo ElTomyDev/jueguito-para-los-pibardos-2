@@ -23,3 +23,8 @@ var nn_outputs: Dictionary = {
 			"shot_angle"    : 0.0,
 			"action"        : 0,
 		}
+
+func reset_shot_impact(viewport:Vector2) -> void:
+	var center_x = viewport.x / 2
+	var center_y = viewport.y / 2
+	

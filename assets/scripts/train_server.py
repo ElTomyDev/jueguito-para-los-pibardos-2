@@ -2,662 +2,317 @@ import numpy as np
 import json
 import threading
 import socket
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from collections import deque
+import os
+import time
 
-# Hiperparámetros PPO
-INPUTS      = 40
-HIDDEN      = 256
-ACTOR_OUT   = 4
-GAMMA       = 0.99
-LAMBDA      = 0.95      # GAE lambda
-LR          = 0.0001
-CLIP_EPS    = 0.2       # clip de PPO
-ENTROPY_B   = 0.01
-MAX_GRAD    = 0.5
-CHUNK_LEN  = 64    # largo de cada chunk contiguo
-EPOCHS     = 4     # pasadas sobre el episodio por update
+# ---------- Hiperparámetros ----------
+INPUTS = 40
+HIDDEN = 256
+ACTOR_OUT = 4          # 3 continuos (move_x, move_y, angle) + 1 logit para disparar
+GAMMA = 0.99
+LAMBDA = 0.95
+LR = 3e-4
+CLIP_EPS = 0.2
+ENTROPY_B = 0.01
+EPOCHS = 4
+BATCH_SIZE = 64        # no se usa realmente, procesamos el episodio completo
+MAX_GRAD_NORM = 0.5
 
-is_updating = False
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def sigmoid(x) -> float:
-    return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
+run_best_model = False
 
-def clip_grad(g) -> any:
-    return np.clip(g, -MAX_GRAD, MAX_GRAD)
-
-def ppo_eff_ratio(ratio, clipped_ratio, adv) -> float:
-    loss_unclipped = ratio * adv
-    loss_clipped   = clipped_ratio * adv
-    # PPO toma el mínimo: si el término sin clip ya es menor, se usa ratio.
-    # Si el clipeado es menor (clip activo), gradiente = 0.
-    return ratio if loss_unclipped <= loss_clipped else 0.0
-
-
-class LSTMCell:
-    """LSTM minimal implementado en numpy"""
-    def __init__(self, input_size, hidden_size) -> None:
-        s = np.sqrt(2.0 / (input_size + hidden_size))
-        # Pesos para los 4 gates: input, forget, cell, output
-        self.Wf = np.random.randn(hidden_size, input_size + hidden_size) * s
-        self.bf = np.ones(hidden_size)   # forget bias en 1 para estabilidad inicial
-
-        self.Wi = np.random.randn(hidden_size, input_size + hidden_size) * s
-        self.bi = np.zeros(hidden_size)
-
-        self.Wc = np.random.randn(hidden_size, input_size + hidden_size) * s
-        self.bc = np.zeros(hidden_size)
-
-        self.Wo = np.random.randn(hidden_size, input_size + hidden_size) * s
-        self.bo = np.zeros(hidden_size)
-
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-
-    def forward(self, x, h_prev, c_prev) -> any:
-        """
-        x: input vector (input_size,)
-        h_prev, c_prev: estados anteriores (hidden_size,)
-        Devuelve h_new, c_new y cache para backprop
-        """
-        xh = np.concatenate([x, h_prev])
-
-        f = sigmoid(self.Wf @ xh + self.bf)        # forget gate
-        i = sigmoid(self.Wi @ xh + self.bi)        # input gate
-        c_tilde = np.tanh(self.Wc @ xh + self.bc) # candidate
-        o = sigmoid(self.Wo @ xh + self.bo)        # output gate
-
-        c_new = f * c_prev + i * c_tilde
-        c_new = np.clip(c_new, -10.0, 10.0)
-        h_new = o * np.tanh(c_new)
-
-        cache = {
-            "x": x, "h_prev": h_prev, "c_prev": c_prev,
-            "xh": xh, "f": f, "i": i,
-            "c_tilde": c_tilde, "o": o,
-            "c_new": c_new, "h_new": h_new
-        }
-        return h_new, c_new, cache
-
-    def zero_state(self) -> any:
-        return np.zeros(self.hidden_size), np.zeros(self.hidden_size)
-
-    def backward(self, dh_next, dc_next, cache) -> any:
-        """
-        dh_next: gradiente respecto a h_new (desde arriba)
-        dc_next: gradiente respecto a c_new (desde arriba)
-        cache:  diccionario guardado en forward()
-        Retorna: dx, dh_prev, dc_prev, gradientes de los pesos
-        """
-        xh = cache["xh"]
-        f = cache["f"]
-        i = cache["i"]
-        o = cache["o"]
-        c_tilde = cache["c_tilde"]
-        c_prev = cache["c_prev"]
-        c_new = cache["c_new"]
-
-        # Gradiente de la salida
-        do = dh_next * np.tanh(c_new)
-        do = do * o * (1 - o) # sigmoid derivative
-        
-        # Gradiente de c_new que viene de h_new a través del tanh
-        dc_from_o = dh_next * o * (1 - np.tanh(c_new)**2)
-
-        # Gradiente de la celda
-        dc = dc_next + dc_from_o
-        dc = np.clip(dc, -10.0, 10.0)
-
-        # Gradientes de las compuertas
-        df = dc * c_prev * f * (1 - f)       # forget gate
-        di = dc * c_tilde * i * (1 - i)      # input gate
-        dc_tilde = dc * i * (1 - c_tilde**2) # candidate
-        do_input = do                         # output gate
-
-        # Acumular gradientes para pesos
-        dWf = np.outer(df, xh)
-        dbf = df
-        dWi = np.outer(di, xh)
-        dbi = di
-        dWc = np.outer(dc_tilde, xh)
-        dbc = dc_tilde
-        dWo = np.outer(do_input, xh)
-        dbo = do_input
-
-        # Gradiente para la entrada xh (concat de x y h_prev)
-        dxh = (self.Wf.T @ df) + (self.Wi.T @ di) + (self.Wc.T @ dc_tilde) + (self.Wo.T @ do_input)
-        dx = dxh[:self.input_size]      # primeros input_size elementos
-        dh_prev = dxh[self.input_size:] # los siguientes hidden_size
-        dc_prev = dc * f
-
-        return dx, dh_prev, dc_prev, (dWf, dbf, dWi, dbi, dWc, dbc, dWo, dbo)
-
-class PPOActorCritic:
+# ---------- Definición de la red (PPO) ----------
+class PPOActorCritic(nn.Module):
     def __init__(self) -> None:
-        self.lock = threading.Lock()
-        s1 = np.sqrt(2.0 / INPUTS)
-        s2 = np.sqrt(2.0 / HIDDEN)
+        super().__init__()
+        self.shared = nn.Sequential(
+            nn.Linear(INPUTS, HIDDEN),
+            nn.Tanh(),
+            nn.Linear(HIDDEN, HIDDEN),
+            nn.Tanh()
+        )
+        self.actor_mean = nn.Linear(HIDDEN, 3)      # salidas continuas (tanh internamente)
+        self.actor_logstd = nn.Parameter(torch.zeros(3))  # log std desacoplado
+        self.actor_shoot = nn.Linear(HIDDEN, 1)     # logit para disparar (Bernoulli)
+        self.critic = nn.Linear(HIDDEN, 1)
 
-        # Capa de entrada
-        self.W_in = np.random.randn(HIDDEN, INPUTS) * s1
-        self.b_in = np.zeros(HIDDEN)
+        # Inicialización
+        self.apply(self._init_weights)
 
-        # LSTM
-        self.lstm = LSTMCell(HIDDEN, HIDDEN)
+    def _init_weights(self, module) -> None:
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+            nn.init.constant_(module.bias, 0.0)
 
-        # Cabezas
-        self.W_actor  = np.random.randn(ACTOR_OUT, HIDDEN) * s2
-        self.b_actor  = np.zeros(ACTOR_OUT)
-        self.W_critic = np.random.randn(1, HIDDEN) * s2
-        self.b_critic = np.zeros(1)
+    def forward(self, x) -> any:
+        # x: tensor (batch, INPUTS)
+        features = self.shared(x)
+        # Acciones continuas
+        mean = torch.tanh(self.actor_mean(features))  # rango [-1, 1]
+        log_std = self.actor_logstd.clamp(-5, 2)
+        std = log_std.exp()
+        # Acción discreta
+        shoot_logit = self.actor_shoot(features).squeeze(-1)
+        # Valor
+        value = self.critic(features).squeeze(-1)
+        return mean, std, shoot_logit, value
 
-        # Log std para outputs continuos (aprendible)
-        self.log_std = np.full(3, -0.5)  # move_x, move_y, shot_angle
-        self.log_std = np.clip(self.log_std, -5.0, 2.0)
+    def get_action(self, x, deterministic=False) -> any:
+        mean, std, shoot_logit, value = self.forward(x)
+        if deterministic:
+            move = mean
+            shoot = (shoot_logit > 0).float()
+        else:
+            # Exploración: muestrear de la propia distribución N(mean, std)
+            noise = torch.randn_like(mean) * std
+            move = (mean + noise).clamp(-1, 1)
+            prob = torch.sigmoid(shoot_logit)
+            shoot = torch.bernoulli(prob).float()
+        # Calcular log_prob con la misma std (consistente)
+        log_prob_cont = -0.5 * (((move - mean) / (std + 1e-8)) ** 2 + 2 * std.log() + np.log(2 * np.pi)).sum(dim=-1)
+        p = torch.sigmoid(shoot_logit)
+        log_prob_shoot = shoot * p.log() + (1 - shoot) * (1 - p).log()
+        log_prob = log_prob_cont + log_prob_shoot
+        return move, shoot, log_prob, value
 
-    def forward(self, x, h, c) -> dict:
-        with self.lock:
-            W_in    = self.W_in.copy()
-            b_in    = self.b_in.copy()
-            W_actor = self.W_actor.copy()
-            b_actor = self.b_actor.copy()
-            W_critic= self.W_critic.copy()
-            b_critic= self.b_critic.copy()
-            log_std = self.log_std.copy()
+    def evaluate(self, x, actions) -> any:
+        """Calcula log_prob y valor para acciones dadas (necesario para PPO update)"""
+        mean, std, shoot_logit, value = self.forward(x)
+        move_act = actions[:, :3]
+        shoot_act = actions[:, 3].long()
+        # Log prob continua
+        log_prob_cont = -0.5 * (((move_act - mean) / std) ** 2 + 2 * std.log() + np.log(2 * np.pi)).sum(dim=-1)
+        # Log prob discreta
+        p = torch.sigmoid(shoot_logit)
+        log_prob_shoot = shoot_act * p.log() + (1 - shoot_act) * (1 - p).log()
+        log_prob = log_prob_cont + log_prob_shoot
+        # Entropía (para regularización)
+        dim = 3
+        entropy_cont = 0.5 * (dim * (1 + np.log(2 * np.pi)) + (2 * std.log()).sum(dim=-1))
+        entropy_discrete = -(p * p.log() + (1 - p) * (1 - p).log())
+        entropy = (entropy_cont + entropy_discrete).mean()
+        return log_prob, value, entropy
 
-        z = np.maximum(0.0, W_in @ x + b_in)  # ReLU
-        h_new, c_new, cache = self.lstm.forward(z, h, c)
+# ---------- Cliente servidor UDP ----------
+class PPOServer:
+    def __init__(self, host="127.0.0.1", port=9999) -> None:
+        self.best_model_path = "./assets/train_data/best_boss_brain.json"
+        self.train_data_path = "./assets/train_data/train_data.json"
+        self.training_log_path = "./assets/train_data/training_log.json"
+        self.load_training_state()
+        self.best_avg_reward = -1e9  # se cargará del archivo
+        self.net = PPOActorCritic().to(device)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=LR)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind((host, port))
+        self.host = host
+        self.port = port
+        self.episode_buffer = []   # guarda (state, action, old_log_prob, reward, done, value)
+        self.last_state = None
+        self.last_action = None
+        self.last_log_prob = None
+        self.last_value = None
+        print(f"[server] listening on {host}:{port}")
 
-        actor_raw  = W_actor  @ h_new + b_actor
-        value      = float((W_critic @ h_new + b_critic)[0])
-        std        = np.exp(log_std)
-        means      = np.tanh(actor_raw[:3])
-        shoot_prob = sigmoid(actor_raw[3])
+    def process_step(self, msg) -> dict:
+        x = torch.tensor(msg["inputs"], dtype=torch.float32, device=device).unsqueeze(0)
+        reward = msg.get("reward", 0.0)
+
+        with torch.no_grad():
+            move, shoot, log_prob, value = self.net.get_action(x)
+            move = move.squeeze(0).cpu().numpy()
+            shoot = shoot.item()
+            log_prob = log_prob.item()
+            value = value.item()
+
+        # Guardar transición para GAE (si existe el estado anterior)
+        if self.last_state is not None:
+            self.episode_buffer.append({
+                "state": self.last_state,
+                "action": self.last_action,
+                "old_log_prob": self.last_log_prob,
+                "reward": reward,
+                "done": False,
+                "value": self.last_value
+            })
+
+        self.last_state = x
+        self.last_action = torch.tensor([move[0], move[1], move[2], shoot], dtype=torch.float32, device=device).unsqueeze(0)
+        self.last_log_prob = log_prob
+        self.last_value = value
 
         return {
-            "h": h_new,
-            "c": c_new,
-            "z": z,
-            "x": x,
-            "lstm_cache": cache,
-            "actor_raw": actor_raw,
-            "means": means,
-            "std": std,
-            "shoot_prob": shoot_prob,
-            "value": value,
-            "_W_actor": W_actor,
-            "_b_actor": b_actor,
-            "_W_critic": W_critic,
-            "_b_critic": b_critic,
-            "_W_in": W_in,
-            "_b_in": b_in,
-
+            "move_dir": [float(move[0]), float(move[1])],
+            "shot_angle": float(move[2]),
+            "action": int(shoot)
         }
 
-    def sample_action(self, state, epsilon=0.1) -> any:
-        """Muestrea acción con exploración gaussiana"""
-        noise  = np.random.randn(3) * state["std"] * epsilon
-        move_x = float(np.clip(state["means"][0] + noise[0], -1, 1))
-        move_y = float(np.clip(state["means"][1] + noise[1], -1, 1))
-        angle  = float(np.clip(state["means"][2] + noise[2], -1, 1))
-        shoot  = 1 if np.random.rand() < state["shoot_prob"] else 0
-        return move_x, move_y, angle, shoot
+    def process_episode_end(self, msg) -> None:
+        final_reward = msg.get("reward", 0.0)
+        episode_num = msg.get("episode", 0)
+        total_reward = msg.get("total_reward", 0.0)
 
-    def log_prob(self, state, actions) -> any:
-        """Log probabilidad de las acciones tomadas — necesario para PPO"""
-        std = state["std"]
-        # Continuas: log prob gaussiana
-        lp_cont = -0.5 * np.sum(
-            ((np.array(actions[:3]) - state["means"]) / (std + 1e-8)) ** 2
-            + 2 * np.log(std + 1e-8)
-        )
-        # Discreta: Bernoulli
-        p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
-        lp_shoot = actions[3] * np.log(p) + (1 - actions[3]) * np.log(1 - p)
-        return lp_cont + lp_shoot
+        # Agregar la última transición con reward terminal y done=True
+        if self.last_state is not None:
+            self.episode_buffer.append({
+                "state": self.last_state,
+                "action": self.last_action,
+                "old_log_prob": self.last_log_prob,
+                "reward": final_reward,
+                "done": True,
+                "value": self.last_value
+            })
 
-    def compute_gae(self, rewards, values, dones) -> any:
-        """
-        Generalized Advantage Estimation — mucho mejor que TD(0) simple
-        Reduce varianza manteniendo algo de bias, controlado por LAMBDA
-        """
-        advantages = np.zeros(len(rewards))
+        loss = 0.0
+        advantages = None
+        returns = None
+        steps = len(self.episode_buffer)
+
+        if steps > 1:
+            advantages, returns, loss = self._update_policy()
+        else:
+            advantages, returns, loss = None, None, 0.0
+        
+        self.save_model()
+        self.check_and_save_best_model(total_reward, episode_num)
+
+        # Guardar estadísticas detalladas
+        if advantages is not None:
+            self._log_training_stats(episode_num, total_reward, final_reward, len(self.episode_buffer), advantages, returns, loss)
+        
+
+        # Limpiar buffer y resetear estados
+        self.episode_buffer.clear()
+        self.last_state = None
+        self.last_action = None
+        self.last_log_prob = None
+        self.last_value = None
+
+        print(f"[server] episode {episode_num} | total_reward={total_reward:.2f} | final={final_reward:.2f} | steps={len(self.episode_buffer)}")
+
+    def _update_policy(self) -> any:
+        # Preparar tensores desde el buffer
+        states = torch.cat([t["state"] for t in self.episode_buffer], dim=0)
+        actions = torch.cat([t["action"] for t in self.episode_buffer], dim=0)
+        old_log_probs = torch.tensor([t["old_log_prob"] for t in self.episode_buffer], device=device)
+        rewards = torch.tensor([t["reward"] for t in self.episode_buffer], dtype=torch.float32, device=device)
+        dones = torch.tensor([t["done"] for t in self.episode_buffer], dtype=torch.float32, device=device)
+        values = torch.tensor([t["value"] for t in self.episode_buffer], dtype=torch.float32, device=device)
+
+        # Calcular GAE y retornos
+        advantages = torch.zeros_like(rewards)
         gae = 0.0
         for t in reversed(range(len(rewards))):
-            next_val = 0.0 if dones[t] else values[t + 1] if t + 1 < len(values) else 0.0
+            next_val = 0.0 if dones[t] else (values[t+1] if t+1 < len(values) else 0.0)
             delta = rewards[t] + GAMMA * next_val - values[t]
-            gae   = delta + GAMMA * LAMBDA * (0.0 if dones[t] else gae)
+            gae = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
             advantages[t] = gae
-        returns = advantages + np.array(values[:len(rewards)])
-        # Normalización
+        returns = advantages + values
+        # Normalizar advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        return advantages, returns
 
-    def bptt_update(self, trajectories) -> None:
-        """
-        trajectories: lista de diccionarios en orden temporal, cada uno con:
-            'state', 'actions', 'old_log_prob', 'advantage', 'return_'
-        """
-        # Inicializar gradientes acumulados
-        gW_in = np.zeros_like(self.W_in)
-        gb_in = np.zeros_like(self.b_in)
-        gWa   = np.zeros_like(self.W_actor)
-        gba   = np.zeros_like(self.b_actor)
-        gWc   = np.zeros_like(self.W_critic)
-        gbc   = np.zeros_like(self.b_critic)
+        # Múltiples épocas (usamos el episodio completo como un batch)
+        for _ in range(EPOCHS):
+            # Evaluar con política actual
+            log_probs, new_values, entropy = self.net.evaluate(states, actions)
+            new_values = new_values.squeeze(-1)
 
-        # Gradientes del LSTM (para el episodio completo)
-        g_lstm_Wf = np.zeros_like(self.lstm.Wf)
-        g_lstm_bf = np.zeros_like(self.lstm.bf)
-        g_lstm_Wi = np.zeros_like(self.lstm.Wi)
-        g_lstm_bi = np.zeros_like(self.lstm.bi)
-        g_lstm_Wc = np.zeros_like(self.lstm.Wc)
-        g_lstm_bc = np.zeros_like(self.lstm.bc)
-        g_lstm_Wo = np.zeros_like(self.lstm.Wo)
-        g_lstm_bo = np.zeros_like(self.lstm.bo)
+            # Ratio de importancia
+            ratio = (log_probs - old_log_probs).exp()
+            # Pérdida actor con clipping
+            surr1 = ratio * advantages
+            surr2 = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * advantages
+            actor_loss = -torch.min(surr1, surr2).mean()
+            # Pérdida critic (MSE)
+            critic_loss = nn.MSELoss()(new_values, returns)
+            # Pérdida total
+            loss = actor_loss + 0.5 * critic_loss - ENTROPY_B * entropy
 
-        # Estado oculto inicial y gradientes iniciales (cero al final del episodio)
-        dh_next = np.zeros(self.lstm.hidden_size)
-        dc_next = np.zeros(self.lstm.hidden_size)
+            self.optimizer.zero_grad() 
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.net.parameters(), MAX_GRAD_NORM)
+            self.optimizer.step()
+        return advantages, returns, loss.item()
 
-        # Recorrer el episodio en orden inverso
-        for tr in reversed(trajectories):
-            state = tr["state"]
-            adv = tr["advantage"]
-            ret = tr["return_"]
-            old_lp = tr["old_log_prob"]
-            actions = tr["actions"]
-
-            # ----- Pérdida PPO (igual que antes) -----
-            new_lp = self.log_prob(state, actions)
-            ratio = np.exp(np.clip(new_lp - old_lp, -10, 10))
-            clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
-            v_pred = state["value"]
-
-            # Gradientes para actor y critic (igual que antes)
-            d_raw = np.zeros(ACTOR_OUT)
-            std = state["std"]
-
-            # Para outputs continuos:
-            for idx in range(3):
-                a_exec = float(np.clip(actions[idx], -0.999, 0.999))
-                mu = state["means"][idx]
-                eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
-                d_raw[idx] = -eff * adv * (a_exec - mu) / (std[idx] ** 2 + 1e-8)
-
-            
-            # Para la acción discreta:
-            p = np.clip(state["shoot_prob"], 1e-6, 1 - 1e-6)
-            eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
-            d_raw[3] = -eff * adv * (actions[3] - p)
-            d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
-
-            # Gradientes actor/critic
-            h = state["h"]
-            gWa += np.outer(d_raw, h)
-            gba += d_raw
-            d_val = v_pred - ret
-            gWc += np.outer(d_val, h)
-            gbc += d_val
-
-            # Gradiente que viene de las cabezas hacia la salida del LSTM
-            dh = self.W_actor.T @ d_raw + self.W_critic.T[:, 0] * d_val
-            # Añadir el dh_next acumulado del paso siguiente (BPTT)
-            dh_total = dh + dh_next
-
-            # Obtener el cache de este paso
-            cache = state["lstm_cache"]
-
-            dh_total = np.clip(dh_total, -5.0, 5.0)
-            dc_next = np.clip(dc_next, -5.0, 5.0)
-            
-            # Llamar al backward de la celda LSTM
-            dx, dh_prev, dc_prev, lstm_grads = self.lstm.backward(dh_total, dc_next, cache)
-            (dWf_step, dbf_step, dWi_step, dbi_step,
-            dWc_step, dbc_step, dWo_step, dbo_step) = lstm_grads
-
-            # Acumular gradientes del LSTM
-            g_lstm_Wf += dWf_step
-            g_lstm_bf += dbf_step
-            g_lstm_Wi += dWi_step
-            g_lstm_bi += dbi_step
-            g_lstm_Wc += dWc_step
-            g_lstm_bc += dbc_step
-            g_lstm_Wo += dWo_step
-            g_lstm_bo += dbo_step
-
-            # Gradientes para la capa de entrada (ReLU)
-            # dx ya es el gradiente respecto a z (salida de la capa anterior)
-            #dz = dx * (state["z"] > 0).astype(float)   # derivada ReLU
-            dz = dx * (state["z"] > 0).astype(float) + 1e-8 * dx   # evita ceros exactos
-            x_input = state["x"]  # es el input original de este paso
-            gW_in += np.outer(dz, x_input)
-            gb_in += dz
-
-            # Actualizar dh_next y dc_next para el paso anterior
-            dh_next = np.clip(dh_prev, -5.0, 5.0)
-            dc_next = np.clip(dc_prev, -5.0, 5.0)
-
-        # Una vez recorrido todo el episodio, aplicar la actualización de pesos
-        n = len(trajectories)
-        with self.lock:
-            self.W_actor   -= LR * clip_grad(gWa / n)
-            self.b_actor   -= LR * clip_grad(gba / n)
-            self.W_critic -= LR * clip_grad(gWc / n)
-            self.b_critic -= LR * clip_grad(gbc / n)
-            self.W_in       -= LR * clip_grad(gW_in / n)
-            self.b_in       -= LR * clip_grad(gb_in / n)
-            self.lstm.Wf    -= LR * clip_grad(g_lstm_Wf / n)
-            self.lstm.bf    -= LR * clip_grad(g_lstm_bf / n)
-            self.lstm.Wi    -= LR * clip_grad(g_lstm_Wi / n)
-            self.lstm.bi    -= LR * clip_grad(g_lstm_bi / n)
-            self.lstm.Wc    -= LR * clip_grad(g_lstm_Wc / n)
-            self.lstm.bc    -= LR * clip_grad(g_lstm_bc / n)
-            self.lstm.Wo    -= LR * clip_grad(g_lstm_Wo / n)
-            self.lstm.bo    -= LR * clip_grad(g_lstm_bo / n)
-    
-    def ppo_chunk_update(self, trajectories) -> None:
-        """
-        Divide el episodio en chunks contiguos de CHUNK_LEN steps.
-        Por cada época, recorre los chunks en orden y propaga h/c
-        entre ellos para mantener el contexto del LSTM intacto.
-        
-        Ventajas sobre bptt_update() en episodios de 900 steps:
-        - El gradiente retrocede solo CHUNK_LEN pasos → no se desvanece
-        - EPOCHS pasadas → más updates por episodio (EPOCHS * n_chunks)
-        - h/c se propagan hacia adelante → el LSTM retiene contexto
-        """
-        n = len(trajectories)
-        if n < 2:
-            return
-
-        # Arma lista de chunks: índices [start, end)
-        chunks = []
-        for start in range(0, n, CHUNK_LEN):
-            end = min(start + CHUNK_LEN, n)
-            chunks.append((start, end))
-
-        for epoch in range(EPOCHS):
-            # Reinicia el estado oculto al comienzo de cada época
-            h_chunk = np.zeros(self.lstm.hidden_size)
-            c_chunk = np.zeros(self.lstm.hidden_size)
-
-            for (start, end) in chunks:
-                chunk = trajectories[start:end]
-                h_chunk, c_chunk = self._update_chunk(
-                    chunk, h_chunk, c_chunk
-                )
-
-    def _update_chunk(self, chunk, h_init, c_init) -> any:
-        """
-        Hace un paso de BPTT sobre un chunk contiguo.
-        
-        - Forward pass: recorre el chunk propagando h/c desde h_init/c_init
-        - Backward pass: BPTT solo sobre el chunk (no sobre el episodio entero)
-        - Retorna el h/c final para pasarle al próximo chunk
-        
-        Nota: re-ejecuta el forward con h_init/c_init en lugar de usar
-        los caches guardados, porque esos caches corresponden al estado
-        del episodio original (sin el h correcto para este chunk).
-        """
-        # Inicializar gradientes acumulados
-        gW_in = np.zeros_like(self.W_in)
-        gb_in = np.zeros_like(self.b_in)
-        gWa   = np.zeros_like(self.W_actor)
-        gba   = np.zeros_like(self.b_actor)
-        gWc   = np.zeros_like(self.W_critic)
-        gbc = np.zeros(1) 
-        g_lstm = {k: np.zeros_like(getattr(self.lstm, k))
-                for k in ("Wf","bf","Wi","bi","Wc","bc","Wo","bo")}
-
-        # ---- Forward pass del chunk ----
-        # Re-ejecuta con h_init/c_init para tener los caches correctos
-        h, c = h_init.copy(), c_init.copy()
-        fresh_states = []
-        for tr in chunk:
-            x = tr["state"]["x"]
-            z = np.maximum(0.0, self.W_in @ x + self.b_in)
-            h, c, lstm_cache = self.lstm.forward(z, h, c)
-
-            actor_raw  = self.W_actor  @ h + self.b_actor
-            value      = float((self.W_critic @ h + self.b_critic)[0])
-            std        = np.exp(self.log_std)
-            means      = np.tanh(actor_raw[:3])
-            shoot_prob = sigmoid(actor_raw[3])
-
-            fresh_states.append({
-                "x": x, "z": z, "h": h, "c": c,
-                "lstm_cache": lstm_cache,
-                "actor_raw": actor_raw,
-                "means": means, "std": std,
-                "shoot_prob": shoot_prob,
-                "value": value,
-            })
-
-        h_final, c_final = h.copy(), c.copy()
-
-        # ---- Backward pass (BPTT truncado al chunk) ----
-        dh_next = np.zeros(self.lstm.hidden_size)
-        dc_next = np.zeros(self.lstm.hidden_size)
-
-        for i, (tr, fs) in enumerate(
-                zip(reversed(chunk), reversed(fresh_states))):
-            adv    = tr["advantage"]
-            ret    = tr["return_"]
-            old_lp = tr["old_log_prob"]
-            actions = tr["actions"]
-
-            # PPO ratio con log_prob recalculado sobre el estado fresco
-            new_lp = self.log_prob(fs, actions)
-            ratio  = np.exp(np.clip(new_lp - old_lp, -10, 10))
-            clipped_ratio = np.clip(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS)
-
-            # Gradiente actor (continuo + discreto)
-            d_raw = np.zeros(ACTOR_OUT)
-            std   = fs["std"]
-            for idx in range(3):
-                mu = fs["means"][idx]
-                a  = float(np.clip(actions[idx], -0.999, 0.999))
-                eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
-                d_raw[idx] = -eff * adv * (a - mu) / (std[idx]**2 + 1e-8)
-            
-            p = np.clip(fs["shoot_prob"], 1e-6, 1 - 1e-6)
-            eff = ppo_eff_ratio(ratio, clipped_ratio, adv)
-            d_raw[3]  = -eff * adv * (actions[3] - p)
-            d_raw[3] += ENTROPY_B * np.log(p / (1 - p)) * p * (1 - p)
-
-            # Gradiente critic
-            d_val = fs["value"] - ret
-
-            # Acumular cabezas
-            gWa += np.outer(d_raw, fs["h"])
-            gba += d_raw
-            gWc += np.outer(np.array([d_val]), fs["h"])
-            gbc += np.array([d_val])
-
-            # Gradiente hacia h desde las cabezas + BPTT acumulado
-            dh = self.W_actor.T @ d_raw + self.W_critic.T[:, 0] * d_val
-            dh_total = np.clip(dh + dh_next, -5.0, 5.0)
-            dc_next  = np.clip(dc_next, -5.0, 5.0)
-
-            dx, dh_prev, dc_prev, lstm_grads = self.lstm.backward(
-                dh_total, dc_next, fs["lstm_cache"]
-            )
-            (dWf, dbf, dWi, dbi, dWc_l, dbc, dWo, dbo) = lstm_grads
-
-            g_lstm["Wf"] += dWf;  g_lstm["bf"] += dbf
-            g_lstm["Wi"] += dWi;  g_lstm["bi"] += dbi
-            g_lstm["Wc"] += dWc_l; g_lstm["bc"] += dbc
-            g_lstm["Wo"] += dWo;  g_lstm["bo"] += dbo
-
-            dz     = dx * (fs["z"] > 0).astype(float)
-            gW_in += np.outer(dz, fs["x"])
-            gb_in += dz
-
-            dh_next = dh_prev
-            dc_next = dc_prev
-
-        # ---- Aplicar gradientes ----
-        m = len(chunk)
-        with self.lock:
-            self.W_actor  -= LR * clip_grad(gWa / m)
-            self.b_actor  -= LR * clip_grad(gba / m)
-            self.W_critic -= LR * clip_grad(gWc / m)
-            self.b_critic -= LR * clip_grad(gbc / m)
-            self.W_in     -= LR * clip_grad(gW_in / m)
-            self.b_in     -= LR * clip_grad(gb_in / m)
-            for k in g_lstm:
-                getattr(self.lstm, k)[:] -= LR * clip_grad(g_lstm[k] / m)
-
-        return h_final, c_final
-        
-    def save(self, path="./assets/train_data/boss_brain.json") -> None:
-        with self.lock:
-            data = {
-                "W_in": self.W_in.tolist(), "b_in": self.b_in.tolist(),
-                "W_actor": self.W_actor.tolist(), "b_actor": self.b_actor.tolist(),
-                "W_critic": self.W_critic.tolist(), "b_critic": self.b_critic.tolist(),
-                "log_std": self.log_std.tolist(),
-                "lstm_Wf": self.lstm.Wf.tolist(), "lstm_bf": self.lstm.bf.tolist(),
-                "lstm_Wi": self.lstm.Wi.tolist(), "lstm_bi": self.lstm.bi.tolist(),
-                "lstm_Wc": self.lstm.Wc.tolist(), "lstm_bc": self.lstm.bc.tolist(),
-                "lstm_Wo": self.lstm.Wo.tolist(), "lstm_bo": self.lstm.bo.tolist(),
-            }
-        with open(path, "w") as f:
-            json.dump(data, f)
-
-    def load(self, path="./assets/train_data/boss_brain.json") -> None:
-        try:
-            with open(path, "r") as f:
-                d = json.load(f)
-            self.W_in     = np.array(d["W_in"])
-            self.b_in     = np.array(d["b_in"])
-            self.W_actor  = np.array(d["W_actor"])
-            self.b_actor  = np.array(d["b_actor"])
-            self.W_critic = np.array(d["W_critic"])
-            self.b_critic = np.array(d["b_critic"])
-            self.log_std  = np.array(d["log_std"])
-            self.lstm.Wf  = np.array(d["lstm_Wf"])
-            self.lstm.bf  = np.array(d["lstm_bf"])
-            self.lstm.Wi  = np.array(d["lstm_Wi"])
-            self.lstm.bi  = np.array(d["lstm_bi"])
-            self.lstm.Wc  = np.array(d["lstm_Wc"])
-            self.lstm.bc  = np.array(d["lstm_bc"])
-            self.lstm.Wo  = np.array(d["lstm_Wo"])
-            self.lstm.bo  = np.array(d["lstm_bo"])
-            print("[server] modelo PPO+LSTM cargado")
-        except FileNotFoundError:
-            print("[server] modelo nuevo")
-
-
-# -------------------------------------------------------
-# SERVIDOR
-# -------------------------------------------------------
-
-nn = PPOActorCritic()
-nn.load()
-
-# Hidden state del LSTM — se resetea por episodio
-h_state, c_state = nn.lstm.zero_state()
-
-# Buffer de trayectorias del episodio actual (para GAE)
-episode_buffer = []
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("127.0.0.1", 9999))
-print("[server] escuchando 127.0.0.1:9999")
-
-last_state = None
-last_actions = None
-
-while True:
-    data, addr = sock.recvfrom(65535)
-    msg = json.loads(data.decode())
-
-    if msg["type"] == "step":
-        x       = np.array(msg["inputs"], dtype=np.float64)
-        epsilon = msg.get("epsilon", 0.1)
-        reward  = msg.get("reward", 0.0)
-
-        state = nn.forward(x, h_state, c_state)
-        h_state = state["h"]
-        c_state = state["c"]
-
-        move_x, move_y, angle, shoot = nn.sample_action(state, epsilon)
-
-        # Guarda transición con log_prob para PPO
-        if last_state is not None and last_actions is not None:
-            old_lp = nn.log_prob(last_state, last_actions)
-            episode_buffer.append({
-                "state":        last_state,
-                "actions":      last_actions,
-                "old_log_prob": old_lp,
-                "reward":       reward,
-                "done":         False,
-            })
-
-        last_state   = state
-        last_actions = [move_x, move_y, angle, shoot]
-
-        resp = {
-            "move_dir":   [move_x, move_y],
-            "shot_angle": angle,
-            "action":     shoot,
-        }
-        sock.sendto(json.dumps(resp).encode(), addr)
-
-    elif msg["type"] == "episode_end":
-        final_reward = msg.get("reward", 0.0)
-
-        # Cierra la trayectoria con la recompensa terminal
-        if last_state is not None and last_actions is not None:
-            old_lp = nn.log_prob(last_state, last_actions)
-            episode_buffer.append({
-                "state":        last_state,
-                "actions":      last_actions,
-                "old_log_prob": old_lp,
-                "reward":       final_reward,
-                "done":         True,
-            })
-            
-        
-        # Calcula GAE sobre la trayectoria completa del episodio
-        traj_len = 0
-        if len(episode_buffer) >= 2:
-            rewards = [t["reward"] for t in episode_buffer]
-            values  = [t["state"]["value"] for t in episode_buffer]
-            dones   = [t["done"] for t in episode_buffer]
-            advantages, returns = nn.compute_gae(rewards, values, dones)
-            
-            trajectories = []
-            for i, tr in enumerate(episode_buffer):
-                trajectories.append({
-                    "state":        tr["state"],
-                    "actions":      tr["actions"],
-                    "old_log_prob": tr["old_log_prob"],
-                    "advantage":    float(advantages[i]),
-                    "return_":      float(returns[i]),
-                })
-            traj_len = len(trajectories)
-            #nn.bptt_update(trajectories)
-            #threading.Thread(target=nn.save, daemon=True).start()
-            def update_and_save(traj) -> None:
-                nn.bptt_update(traj)
-                #nn.ppo_chunk_update(traj)
-                nn.save()
-                
-            threading.Thread(target=update_and_save, args=(trajectories,), daemon=True).start()
+    def load_training_state(self) -> None:
+        """Carga el progreso desde train_data.json (si existe)"""
+        if os.path.exists(self.train_data_path):
+            with open(self.train_data_path, "r") as f:
+                data = json.load(f)
+            self.best_avg_reward = data.get("best_avg_reward", -1e9)
+            self.last_episode = data.get("episode", 0)
+            print(f"[server] loaded training state: episode {self.last_episode}, best_avg_reward={self.best_avg_reward:.2f}")
         else:
-            nn.save()
+            self.best_avg_reward = -1e9
+            self.last_episode = 0
+            print("[server] no existing training data, starting fresh")
+    
+    def check_and_save_best_model(self, total_reward, episode) -> None:
+        """Guarda el modelo si la recompensa total supera la mejor registrada"""
+        if total_reward > self.best_avg_reward:
+            self.best_avg_reward = total_reward
+            self.save_model(self.best_model_path)
+            print(f"[server] 🏆 new best model saved (reward={total_reward:.2f}) at episode {episode}")
+    
+    def _log_training_stats(self, episode, total_reward, final_reward, steps, advantages, returns, loss) -> None:
+        """Registra estadísticas detalladas del entrenamiento"""
+        log_entry = {
+            "episode": episode,
+            "total_reward": total_reward,
+            "final_reward": final_reward,
+            "steps": steps,
+            "mean_advantage": float(advantages.detach().cpu().numpy().mean()) if advantages is not None and advantages.numel() > 0 else 0.0,
+            "mean_return": float(returns.detach().cpu().numpy().mean()) if returns is not None and returns.numel() > 0 else 0.0,
+            "loss": float(loss),
+            "timestamp": time.time()
+        }
+        # Cargar log existente
+        if os.path.exists(self.training_log_path):
+            with open(self.training_log_path, "r") as f:
+                log = json.load(f)
+        else:
+            log = []
+        log.append(log_entry)
+        with open(self.training_log_path, "w") as f:
+            json.dump(log, f, indent=2)
+    
+    def save_model(self, path="./assets/train_data/boss_brain.json") -> None:
+        # Convertir a dict de numpy para guardar en JSON (compatible con el juego)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state_dict = self.net.state_dict()
+        np_state = {k: v.cpu().numpy().tolist() for k, v in state_dict.items()}
+        with open(path, "w") as f:
+            json.dump(np_state, f)
 
-        # Reset para el próximo episodio
-        episode_buffer.clear()
-        last_state   = None
-        last_actions = None
-        h_state, c_state = nn.lstm.zero_state()
+    def load_model(self, path="./assets/train_data/boss_brain.json") -> None:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                np_state = json.load(f)
+            state_dict = {k: torch.tensor(v, device=device) for k, v in np_state.items()}
+            self.net.load_state_dict(state_dict)
+            print(f"[server] loaded model from {path}")
+        else:
+            print("[server] starting with fresh model")
 
-        
-        print(
-            f"[server] ep {msg.get('episode','?')} "
-            f"| total={msg.get('total_reward', 0):.2f} "
-            f"| final={final_reward:.2f} "
-            f"| traj={traj_len}"
-        )
+    def run(self) -> None:
+        if run_best_model:
+            self.load_training_state()
+        else:
+            self.load_model()
+        while True:
+            data, addr = self.sock.recvfrom(65535)
+            msg = json.loads(data.decode())
+            if msg["type"] == "step":
+                resp = self.process_step(msg)
+                self.sock.sendto(json.dumps(resp).encode(), addr)
+            elif msg["type"] == "episode_end":
+                self.process_episode_end(msg)
+
+if __name__ == "__main__":
+    server = PPOServer()
+    server.run()
