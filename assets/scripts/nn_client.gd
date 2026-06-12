@@ -4,7 +4,7 @@ class_name NNClient
 var _socket: PacketPeerUDP
 var _host: String = "127.0.0.1"
 var _port: int = 9999
-var _timeout_ms: int = 8
+var _timeout_ms: int = 16
 
 func _init() -> void:
 	_socket = PacketPeerUDP.new()
@@ -26,7 +26,7 @@ func request_action(inputs: Array, reward: float) -> Dictionary:
 	# fallback si timeout
 	return {"move_dir": [0.0, 0.0], "shot_angle": 0.0, "action": 0}
 
-func notify_episode_end(episode: int, total_reward: float, final_reward: float) -> void:
+func notify_episode_end(episode: int, total_reward: float, final_reward: float):
 	var msg = JSON.stringify({
 		"type": "episode_end",
 		"episode": episode,

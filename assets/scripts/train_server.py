@@ -5,7 +5,6 @@ import socket
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import deque
 import os
 import time
 
@@ -133,19 +132,6 @@ class PPOActorCritic(nn.Module):
         value = self.critic_head(out).squeeze(-1)
         return value, new_hidden
 
-    def forward(self, x) -> any:
-        # x: tensor (batch, INPUTS)
-        features = self.shared(x)
-        # Acciones continuas
-        mean = torch.tanh(self.actor_mean(features))  # rango [-1, 1]
-        log_std = self.actor_logstd.clamp(-5, 2)
-        std = log_std.exp()
-        # Acción discreta
-        shoot_logit = self.actor_shoot(features).squeeze(-1)
-        # Valor
-        value = self.critic(features).squeeze(-1)
-        return mean, std, shoot_logit, value
-
     def get_action(self, x, actor_hidden, critic_hidden, deterministic=False) -> any:
         """
         Usado en inferencia (process_step).
@@ -224,188 +210,383 @@ class PPOActorCritic(nn.Module):
 # ---------- Cliente servidor UDP ----------
 class PPOServer:
     def __init__(self, host="127.0.0.1", port=9999) -> None:
-        self.best_model_path = "./assets/train_data/best_boss_brain.json"
-        self.train_data_path = "./assets/train_data/train_data.json"
+        self.best_model_path  = "./assets/train_data/best_boss_brain.json"
+        self.train_data_path  = "./assets/train_data/train_data.json"
         self.training_log_path = "./assets/train_data/training_log.json"
         self.load_training_state()
-        self.best_avg_reward = -1e9  # se cargará del archivo
-        self.net = PPOActorCritic().to(device)
+        self.best_avg_reward = -1e9
+
+        self.net       = PPOActorCritic().to(device)
         self.optimizer = optim.Adam(self.net.parameters(), lr=LR)
+
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((host, port))
-        self.host = host
-        self.port = port
-        self.episode_buffer = []   # guarda (state, action, old_log_prob, reward, done, value)
-        self.last_state = None
-        self.last_action = None
-        self.last_log_prob = None
-        self.last_value = None
-        print(f"[server] listening on {host}:{port}")
 
+        # Buffer del episodio — cada entrada es un dict con todo lo necesario
+        self.episode_buffer = []
+
+        # Hidden states actuales (se propagan step a step)
+        self.actor_hidden  = None
+        self.critic_hidden = None
+
+        # Último step guardado (para poder asociar reward al step anterior)
+        self.last_state        = None
+        self.last_action       = None
+        self.last_log_prob     = None
+        self.last_value        = None
+        self.last_actor_hidden = None   # hidden al INICIO del último step
+        self.last_critic_hidden = None
+
+        self.file_lock = threading.Lock()
+        self.model_lock = threading.Lock()
+
+        print(f"[server] Escuchando.. {host}:{port}")
+        self._reset_hidden()
+
+    # ----------------------------------------
+    # --- resetea los hidden states a cero ---
+    # ----------------------------------------
+    def _reset_hidden(self) -> None:
+        self.actor_hidden, self.critic_hidden = self.net.make_hidden(batch_size=1)
+
+    # --------------------------------------
+    # --- Inferencia (un step del juego) ---
+    # --------------------------------------
     def process_step(self, msg) -> dict:
-        x = torch.tensor(msg["inputs"], dtype=torch.float32, device=device).unsqueeze(0)
+        x      = torch.tensor(msg["inputs"], dtype=torch.float32, device=device).unsqueeze(0)
         reward = msg.get("reward", 0.0)
 
-        with torch.no_grad():
-            move, shoot, log_prob, value = self.net.get_action(x)
-            move = move.squeeze(0).cpu().numpy()
-            shoot = shoot.item()
-            log_prob = log_prob.item()
-            value = value.item()
+        # Guardamos el hidden ANTES de pasarlo por la red — es el contexto
+        # que tenía la red cuando tomó la acción del step anterior
+        prev_actor_h  = (self.actor_hidden[0].detach().clone(),
+                         self.actor_hidden[1].detach().clone())
+        prev_critic_h = (self.critic_hidden[0].detach().clone(),
+                         self.critic_hidden[1].detach().clone())
 
-        # Guardar transición para GAE (si existe el estado anterior)
+        with self.model_lock:
+            with torch.no_grad():
+                move, shoot, log_prob, value, new_actor_h, new_critic_h = \
+                    self.net.get_action(x, self.actor_hidden, self.critic_hidden)
+
+            move      = move.squeeze(0).cpu().numpy()
+            shoot     = shoot.item()
+            log_prob  = log_prob.item()
+            value     = value.item()
+
+        # Actualizamos los hidden states para el próximo step
+        self.actor_hidden  = (new_actor_h[0].detach(), new_actor_h[1].detach())
+        self.critic_hidden = (new_critic_h[0].detach(), new_critic_h[1].detach())
+
+        # Guardamos la transición del step ANTERIOR (ahora ya tenemos su reward)
         if self.last_state is not None:
             self.episode_buffer.append({
-                "state": self.last_state,
-                "action": self.last_action,
-                "old_log_prob": self.last_log_prob,
-                "reward": reward,
-                "done": False,
-                "value": self.last_value
+                "state":         self.last_state,               # (1, INPUTS)
+                "action":        self.last_action,              # (1, 4)
+                "old_log_prob":  self.last_log_prob,            # float
+                "reward":        reward,                        # float
+                "done":          False,
+                "value":         self.last_value,               # float
+                # Hiddens al inicio del step — necesarios para re-propagar en update
+                "actor_h0":      self.last_actor_hidden[0],    # (1, 1, HIDDEN)
+                "actor_c0":      self.last_actor_hidden[1],
+                "critic_h0":     self.last_critic_hidden[0],
+                "critic_c0":     self.last_critic_hidden[1],
             })
 
-        self.last_state = x
-        self.last_action = torch.tensor([move[0], move[1], move[2], shoot], dtype=torch.float32, device=device).unsqueeze(0)
-        self.last_log_prob = log_prob
-        self.last_value = value
+        # Guardamos el estado actual como "último" para el próximo step
+        action_tensor = torch.tensor(
+            [move[0], move[1], move[2], shoot],
+            dtype=torch.float32, device=device
+        ).unsqueeze(0)
+
+        self.last_state         = x
+        self.last_action        = action_tensor
+        self.last_log_prob      = log_prob
+        self.last_value         = value
+        self.last_actor_hidden  = prev_actor_h
+        self.last_critic_hidden = prev_critic_h
 
         return {
-            "move_dir": [float(move[0]), float(move[1])],
+            "move_dir":   [float(move[0]), float(move[1])],
             "shot_angle": float(move[2]),
-            "action": int(shoot)
+            "action":     int(shoot)
         }
 
-    def process_episode_end(self, msg) -> None:
+    def process_episode_end(self, msg, client_addr) -> None:
         final_reward = msg.get("reward", 0.0)
-        episode_num = msg.get("episode", 0)
+        episode_num  = msg.get("episode", 0)
         total_reward = msg.get("total_reward", 0.0)
 
-        # Agregar la última transición con reward terminal y done=True
+        # Guardamos la última transición con done=True y reward terminal
         if self.last_state is not None:
             self.episode_buffer.append({
-                "state": self.last_state,
-                "action": self.last_action,
-                "old_log_prob": self.last_log_prob,
-                "reward": final_reward,
-                "done": True,
-                "value": self.last_value
+                "state":         self.last_state,
+                "action":        self.last_action,
+                "old_log_prob":  self.last_log_prob,
+                "reward":        final_reward,
+                "done":          True,
+                "value":         self.last_value,
+                "actor_h0":      self.last_actor_hidden[0],
+                "actor_c0":      self.last_actor_hidden[1],
+                "critic_h0":     self.last_critic_hidden[0],
+                "critic_c0":     self.last_critic_hidden[1],
             })
 
-        loss = 0.0
-        advantages = None
-        returns = None
-        steps = len(self.episode_buffer)
-
-        if steps > 1:
-            advantages, returns, loss = self._update_policy()
-        else:
-            advantages, returns, loss = None, None, 0.0
-        
-        self.save_model()
-        self.check_and_save_best_model(total_reward, episode_num)
-
-        # Guardar estadísticas detalladas
-        if advantages is not None:
-            self._log_training_stats(episode_num, total_reward, final_reward, len(self.episode_buffer), advantages, returns, loss)
-        
-
-        # Limpiar buffer y resetear estados
+        # Reset completo para el próximo episodio
+        buffer_copy = self.episode_buffer.copy()
         self.episode_buffer.clear()
         self.last_state = None
         self.last_action = None
         self.last_log_prob = None
         self.last_value = None
+        self.last_actor_hidden = None
+        self.last_critic_hidden = None
+        self._reset_hidden()
+        
+        # Si hay suficientes pasos, entrenar en hilo
+        if len(buffer_copy) > CHUNK_LEN:
+            threading.Thread(
+                target=self._training_worker,
+                args=(buffer_copy, episode_num, total_reward, final_reward, client_addr),
+                daemon=True
+            ).start()
+        else:
+            # Sin entrenamiento, responder inmediatamente
+            self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), client_addr)
+            print(f"[server] ep {episode_num} (sin entrenamiento) | reward={total_reward:.2f} | steps={len(buffer_copy)}")
 
-        print(f"[server] episode {episode_num} | total_reward={total_reward:.2f} | final={final_reward:.2f} | steps={len(self.episode_buffer)}")
+    def _update_policy(self) -> tuple:
+        buf = self.episode_buffer
+        T   = len(buf)
 
-    def _update_policy(self) -> any:
-        # Preparar tensores desde el buffer
-        states = torch.cat([t["state"] for t in self.episode_buffer], dim=0)
-        actions = torch.cat([t["action"] for t in self.episode_buffer], dim=0)
-        old_log_probs = torch.tensor([t["old_log_prob"] for t in self.episode_buffer], device=device)
-        rewards = torch.tensor([t["reward"] for t in self.episode_buffer], dtype=torch.float32, device=device)
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
-        dones = torch.tensor([t["done"] for t in self.episode_buffer], dtype=torch.float32, device=device)
-        values = torch.tensor([t["value"] for t in self.episode_buffer], dtype=torch.float32, device=device)
+        # ── 1. Construir tensores planos (T, ...) ──────────────────────
+        states       = torch.cat([t["state"]   for t in buf], dim=0)          # (T, INPUTS)
+        actions      = torch.cat([t["action"]  for t in buf], dim=0)          # (T, 4)
+        old_lp       = torch.tensor([t["old_log_prob"] for t in buf], device=device)  # (T,)
+        rewards_raw  = torch.tensor([t["reward"] for t in buf], dtype=torch.float32, device=device)
+        dones        = torch.tensor([t["done"]   for t in buf], dtype=torch.float32, device=device)
+        values_old   = torch.tensor([t["value"]  for t in buf], dtype=torch.float32, device=device)
 
-        # Calcular GAE y retornos
-        advantages = torch.zeros_like(rewards)
+        # ── 2. GAE sobre la secuencia completa ────────────────────────
+        # Normalizamos rewards antes del GAE para estabilidad
+        if rewards_raw.std() < 1e-8:
+            rewards = rewards_raw - rewards_raw.mean()
+        else:
+            rewards = (rewards_raw - rewards_raw.mean()) / (rewards_raw.std() + 1e-8)
+
+        advantages = torch.zeros(T, device=device)
         gae = 0.0
-        for t in reversed(range(len(rewards))):
-            next_val = 0.0 if dones[t] else (values[t+1] if t+1 < len(values) else 0.0)
-            delta = rewards[t] + GAMMA * next_val - values[t]
-            gae = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
+        for t in reversed(range(T)):
+            next_val = 0.0 if dones[t] else (values_old[t + 1].item() if t + 1 < T else 0.0)
+            delta    = rewards[t] + GAMMA * next_val - values_old[t]
+            gae      = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
             advantages[t] = gae
-        returns = advantages + values
-        # Normalizar advantages
+
+        returns    = advantages + values_old
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # Múltiples épocas (usamos el episodio completo como un batch)
+        # ── 3. Partir en chunks y hacer mini-batches ──────────────────
+        # Calculamos cuántos chunks completos entran
+        n_chunks = T // CHUNK_LEN
+        if n_chunks == 0:
+            n_chunks = 1                   # episodio muy corto: un chunk incompleto
+            chunk_len = T
+        else:
+            chunk_len = CHUNK_LEN
+
+        # Recortamos al múltiplo exacto para simplificar el stack
+        T_used = n_chunks * chunk_len
+
+        # Índices de inicio de cada chunk: [0, chunk_len, 2*chunk_len, ...]
+        chunk_starts = list(range(0, T_used, chunk_len))
+
+        # Extraemos el hidden state al inicio de cada chunk (shape: (1,1,HIDDEN) → (1,B,HIDDEN))
+        def stack_hidden(key_h, key_c, starts) -> tuple:
+            h = torch.cat([buf[i][key_h] for i in starts], dim=1)  # (1, B, HIDDEN)
+            c = torch.cat([buf[i][key_c] for i in starts], dim=1)
+            return (h, c)
+
+        last_loss = torch.tensor(0.0)
+
         for _ in range(EPOCHS):
-            # Evaluar con política actual
-            log_probs, new_values, entropy = self.net.evaluate(states, actions)
-            new_values = new_values.squeeze(-1)
+            # Mezclamos el orden de los chunks en cada época
+            perm = torch.randperm(n_chunks).tolist()
 
-            # Ratio de importancia
-            ratio = (log_probs - old_log_probs).exp()
-            # Pérdida actor con clipping
-            surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * advantages
-            actor_loss = -torch.min(surr1, surr2).mean()
-            # Pérdida critic (MSE)
-            critic_loss = nn.MSELoss()(new_values, returns)
-            # Pérdida total
-            loss = actor_loss + 0.5 * critic_loss - ENTROPY_B * entropy
+            for chunk_idx in perm:
+                start = chunk_starts[chunk_idx]
+                end   = start + chunk_len
 
-            self.optimizer.zero_grad() 
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.net.parameters(), MAX_GRAD_NORM)
-            self.optimizer.step()
-        return advantages, returns, loss.item()
+                # Slices del chunk — shape (chunk_len, ...)
+                s_chunk  = states[start:end].unsqueeze(0)    # (1, T_chunk, INPUTS)
+                a_chunk  = actions[start:end].unsqueeze(0)   # (1, T_chunk, 4)
+                lp_chunk = old_lp[start:end]                  # (T_chunk,)
+                adv_chunk = advantages[start:end]             # (T_chunk,)
+                ret_chunk = returns[start:end]                # (T_chunk,)
 
+                # Hidden states al inicio del chunk
+                a_h0 = (buf[start]["actor_h0"],  buf[start]["actor_c0"])
+                c_h0 = (buf[start]["critic_h0"], buf[start]["critic_c0"])
+
+                # Re-propagamos el LSTM sobre el chunk completo
+                with self.model_lock:
+                    log_probs_seq, values_seq, entropy = self.net.evaluate(s_chunk, a_chunk, a_h0, c_h0)
+
+                # Aplanamos (1, T_chunk) → (T_chunk,)
+                log_probs_seq = log_probs_seq.squeeze(0)
+                values_seq    = values_seq.squeeze(0)
+
+                # PPO clipping
+                ratio  = (log_probs_seq - lp_chunk).exp()
+                surr1  = ratio * adv_chunk
+                surr2  = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv_chunk
+                actor_loss  = -torch.min(surr1, surr2).mean()
+                critic_loss = nn.functional.mse_loss(values_seq, ret_chunk)
+                loss        = actor_loss + 0.5 * critic_loss - ENTROPY_B * entropy
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.net.parameters(), MAX_GRAD_NORM)
+                self.optimizer.step()
+                last_loss = loss
+
+        return advantages, returns, last_loss.item()
+
+    def _update_policy_from_buffer(self, buffer) -> tuple:
+        T = len(buffer)
+
+        # Construir tensores
+        states = torch.cat([t["state"] for t in buffer], dim=0)
+        actions = torch.cat([t["action"] for t in buffer], dim=0)
+        old_lp = torch.tensor([t["old_log_prob"] for t in buffer], device=device)
+        rewards_raw = torch.tensor([t["reward"] for t in buffer], dtype=torch.float32, device=device)
+        dones = torch.tensor([t["done"] for t in buffer], dtype=torch.float32, device=device)
+        values_old = torch.tensor([t["value"] for t in buffer], dtype=torch.float32, device=device)
+
+        # Normalizar rewards
+        if rewards_raw.std() < 1e-8:
+            rewards = rewards_raw - rewards_raw.mean()
+        else:
+            rewards = (rewards_raw - rewards_raw.mean()) / (rewards_raw.std() + 1e-8)
+
+        # GAE
+        advantages = torch.zeros(T, device=device)
+        gae = 0.0
+        for t in reversed(range(T)):
+            next_val = 0.0 if dones[t] else (values_old[t + 1].item() if t + 1 < T else 0.0)
+            delta = rewards[t] + GAMMA * next_val - values_old[t]
+            gae = delta + GAMMA * LAMBDA * (1 - dones[t]) * gae
+            advantages[t] = gae
+
+        returns = advantages + values_old
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        # Dividir en chunks
+        n_chunks = max(1, T // CHUNK_LEN)
+        chunk_len = CHUNK_LEN if T >= CHUNK_LEN else T
+        T_used = n_chunks * chunk_len
+        chunk_starts = list(range(0, T_used, chunk_len))
+
+        last_loss = 0.0
+        for _ in range(EPOCHS):
+            perm = torch.randperm(n_chunks).tolist()
+            for chunk_idx in perm:
+                start = chunk_starts[chunk_idx]
+                end = start + chunk_len
+
+                s_chunk = states[start:end].unsqueeze(0)
+                a_chunk = actions[start:end].unsqueeze(0)
+                lp_chunk = old_lp[start:end]
+                adv_chunk = advantages[start:end]
+                ret_chunk = returns[start:end]
+
+                a_h0 = (buffer[start]["actor_h0"], buffer[start]["actor_c0"])
+                c_h0 = (buffer[start]["critic_h0"], buffer[start]["critic_c0"])
+
+                with self.model_lock:
+                    log_probs_seq, values_seq, entropy = self.net.evaluate(s_chunk, a_chunk, a_h0, c_h0)
+
+                    log_probs_seq = log_probs_seq.squeeze(0)
+                    values_seq = values_seq.squeeze(0)
+
+                    ratio = (log_probs_seq - lp_chunk).exp()
+                    surr1 = ratio * adv_chunk
+                    surr2 = torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv_chunk
+                    actor_loss = -torch.min(surr1, surr2).mean()
+                    critic_loss = nn.functional.mse_loss(values_seq, ret_chunk)
+                    loss = actor_loss + 0.5 * critic_loss - ENTROPY_B * entropy
+
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(self.net.parameters(), MAX_GRAD_NORM)
+                    self.optimizer.step()
+                    last_loss = loss.item()
+
+        return advantages, returns, last_loss
+    
+    def _training_worker(self, buffer, episode_num, total_reward, final_reward, client_addr) -> None:
+        try:
+            # Actualizar la política usando el buffer copiado
+            advantages, returns, loss = self._update_policy_from_buffer(buffer)
+
+            # Guardar modelo (con lock)
+            with self.model_lock:
+                self.save_model()
+                self.check_and_save_best_model(total_reward, episode_num)
+
+            # Registrar estadísticas
+            if advantages is not None:
+                self._log_training_stats(episode_num, total_reward, final_reward,
+                                         len(buffer), advantages, returns, loss)
+
+            print(f"[server] ep {episode_num} (entrenado) | reward={total_reward:.2f} | final={final_reward:.2f} | steps={len(buffer)} | loss={loss:.4f}")
+        except Exception as e:
+            print(f"[server] Error en entrenamiento del episodio {episode_num}: {e}")
+        finally:
+            # Notificar al cliente que puede continuar
+            self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), client_addr)
+
+    # -------------------------------------------
+    # --- Actualizacion y Control de archivos ---
+    # -------------------------------------------
     def load_training_state(self) -> None:
-        """Carga el progreso desde train_data.json (si existe)"""
         if os.path.exists(self.train_data_path):
             with open(self.train_data_path, "r") as f:
                 data = json.load(f)
             self.best_avg_reward = data.get("best_avg_reward", -1e9)
-            self.last_episode = data.get("episode", 0)
-            print(f"[server] loaded training state: episode {self.last_episode}, best_avg_reward={self.best_avg_reward:.2f}")
+            self.last_episode    = data.get("episode", 0)
+            print(f"[server] training state cargado: ep {self.last_episode}, best={self.best_avg_reward:.2f}")
         else:
             self.best_avg_reward = -1e9
-            self.last_episode = 0
-            print("[server] no existing training data, starting fresh")
-    
+            self.last_episode    = 0
+            print("[server] sin datos previos, arrancando desde cero")
+
     def check_and_save_best_model(self, total_reward, episode) -> None:
-        """Guarda el modelo si la recompensa total supera la mejor registrada"""
         if total_reward > self.best_avg_reward:
             self.best_avg_reward = total_reward
             self.save_model(self.best_model_path)
-            print(f"[server] 🏆 new best model saved (reward={total_reward:.2f}) at episode {episode}")
-    
+            print(f"[server] nuevo mejor modelo (reward={total_reward:.2f}) ep {episode}")
+
     def _log_training_stats(self, episode, total_reward, final_reward, steps, advantages, returns, loss) -> None:
-        """Registra estadísticas detalladas del entrenamiento"""
-        log_entry = {
-            "episode": episode,
-            "total_reward": total_reward,
-            "final_reward": final_reward,
-            "steps": steps,
-            "mean_advantage": float(advantages.detach().cpu().numpy().mean()) if advantages is not None and advantages.numel() > 0 else 0.0,
-            "mean_return": float(returns.detach().cpu().numpy().mean()) if returns is not None and returns.numel() > 0 else 0.0,
-            "loss": float(loss),
-            "timestamp": time.time()
+        entry = {
+            "episode":        episode,
+            "total_reward":   total_reward,
+            "final_reward":   final_reward,
+            "steps":          steps,
+            "mean_advantage": float(advantages.detach().cpu().mean()) if advantages is not None else 0.0,
+            "mean_return":    float(returns.detach().cpu().mean())    if returns    is not None else 0.0,
+            "loss":           float(loss),
+            "timestamp":      time.time()
         }
-        with open(self.training_log_path, "a") as f:
-            f.write(json.dumps(log_entry) + "\n")
-    
-    
+        with self.file_lock:
+            with open(self.training_log_path, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+
     def save_model(self, path="./assets/train_data/boss_brain.json") -> None:
-        # Convertir a dict de numpy para guardar en JSON (compatible con el juego)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        state_dict = self.net.state_dict()
-        np_state = {k: v.cpu().numpy().tolist() for k, v in state_dict.items()}
-        with open(path, "w") as f:
-            json.dump(np_state, f)
+        with self.file_lock:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            np_state = {k: v.cpu().numpy().tolist() for k, v in self.net.state_dict().items()}
+            with open(path, "w") as f:
+                json.dump(np_state, f)
 
     def load_model(self, path="./assets/train_data/boss_brain.json") -> None:
         if os.path.exists(path):
@@ -413,15 +594,12 @@ class PPOServer:
                 np_state = json.load(f)
             state_dict = {k: torch.tensor(v, device=device) for k, v in np_state.items()}
             self.net.load_state_dict(state_dict)
-            print(f"[server] loaded model from {path}")
+            print(f"[server] modelo cargado desde {path}")
         else:
-            print("[server] starting with fresh model")
+            print("[server] sin modelo previo, pesos aleatorios")
 
     def run(self) -> None:
-        if run_best_model:
-            self.load_training_state()
-        else:
-            self.load_model()
+        self.load_model()
         while True:
             data, addr = self.sock.recvfrom(65535)
             msg = json.loads(data.decode())
@@ -429,7 +607,7 @@ class PPOServer:
                 resp = self.process_step(msg)
                 self.sock.sendto(json.dumps(resp).encode(), addr)
             elif msg["type"] == "episode_end":
-                self.process_episode_end(msg)
+                self.process_episode_end(msg, addr)
 
 if __name__ == "__main__":
     server = PPOServer()
