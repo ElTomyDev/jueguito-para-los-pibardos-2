@@ -12,6 +12,7 @@ import time
 # ---------- Hiperparámetros ----------
 INPUTS = 40
 HIDDEN = 256
+CHUNK_LEN = 64         # largo de cada sub-secuencia para mini-batches
 ACTOR_OUT = 4          # 3 continuos (move_x, move_y, angle) + 1 logit para disparar
 GAMMA = 0.99
 LAMBDA = 0.95
@@ -30,27 +31,107 @@ run_best_model = False
 class PPOActorCritic(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.shared = nn.Sequential(
+
+        # --- Trunk del Actor ---
+        self.actor_trunk = nn.Sequential(
             nn.Linear(INPUTS, HIDDEN),
+            nn.LayerNorm(HIDDEN),
             nn.Tanh(),
             nn.Linear(HIDDEN, HIDDEN),
+            nn.LayerNorm(HIDDEN),
             nn.Tanh()
         )
-        self.actor_mean = nn.Linear(HIDDEN, 3)      # salidas continuas (tanh internamente)
-        self.actor_logstd = nn.Parameter(torch.zeros(3))  # log std desacoplado
-        self.actor_shoot = nn.Linear(HIDDEN, 1)     # logit para disparar (Bernoulli)
-        self.critic = nn.Linear(HIDDEN, 1)
+        self.actor_lstm = nn.LSTM(HIDDEN, HIDDEN, batch_first=True)
 
-        # Inicialización
-        self.apply(self._init_weights)
-        nn.init.orthogonal_(self.actor_mean.weight, gain=0.01)
+        # Cabezas del actor
+        self.actor_mean    = nn.Linear(HIDDEN, 3)   # move_x, move_y, shot_angle
+        self.actor_logstd  = nn.Parameter(torch.full((3,), -0.5))  # std inicial más conservadora
+        self.actor_shoot   = nn.Linear(HIDDEN, 1)   # logit disparo (Bernoulli)
+
+        # --- Trunk del Crítico ---
+        self.critic_trunk = nn.Sequential(
+            nn.Linear(INPUTS, HIDDEN),
+            nn.LayerNorm(HIDDEN),
+            nn.Tanh(),
+            nn.Linear(HIDDEN, HIDDEN),
+            nn.LayerNorm(HIDDEN),
+            nn.Tanh(),
+            nn.Linear(HIDDEN, HIDDEN),   # capa extra — el crítico necesita más capacidad
+            nn.LayerNorm(HIDDEN),
+            nn.Tanh()
+        )
+        self.critic_lstm = nn.LSTM(HIDDEN, HIDDEN, batch_first=True)
+        self.critic_head  = nn.Linear(HIDDEN, 1)
+
+        # Inicialización ortogonal
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for module in list(self.actor_trunk) + list(self.critic_trunk):
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+                nn.init.constant_(module.bias, 0.0)
+
+        # LSTMs: inicialización ortogonal en las matrices de pesos
+        for lstm in [self.actor_lstm, self.critic_lstm]:
+            for name, param in lstm.named_parameters():
+                if 'weight' in name:
+                    nn.init.orthogonal_(param)
+                elif 'bias' in name:
+                    nn.init.constant_(param, 0.0)
+                    # Bias de forget gate a 1 — ayuda a retener memoria al inicio
+                    n = param.size(0)
+                    param.data[n//4 : n//2].fill_(1.0)
+
+        # Cabezas del actor: gain pequeño para acciones iniciales casi uniformes
+        nn.init.orthogonal_(self.actor_mean.weight,  gain=0.01)
+        nn.init.constant_(self.actor_mean.bias,      0.0)
         nn.init.orthogonal_(self.actor_shoot.weight, gain=0.01)
-        nn.init.orthogonal_(self.critic.weight, gain=1.0)
+        nn.init.constant_(self.actor_shoot.bias,     0.0)
 
-    def _init_weights(self, module) -> None:
-        if isinstance(module, nn.Linear):
-            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-            nn.init.constant_(module.bias, 0.0)
+        # Crítico: gain 1.0
+        nn.init.orthogonal_(self.critic_head.weight, gain=1.0)
+        nn.init.constant_(self.critic_head.bias,     0.0)
+
+    def make_hidden(self, batch_size: int = 1):
+        """Crea hidden states en cero para actor y crítico."""
+        zeros = lambda: (
+            torch.zeros(1, batch_size, HIDDEN, device=device),
+            torch.zeros(1, batch_size, HIDDEN, device=device)
+        )
+        return zeros(), zeros()   # (actor_hidden, critic_hidden)
+    
+    def forward_actor(self, x, hidden) -> any:
+        """
+        x:      (batch, seq_len, INPUTS)  o  (batch, INPUTS) → se unsqueeze internamente
+        hidden: (h, c) del LSTM actor
+        Devuelve mean, std, shoot_logit, nuevo hidden
+        """
+        if x.dim() == 2:
+            x = x.unsqueeze(1)          # (batch, 1, INPUTS)
+        features = self.actor_trunk(x)   # (batch, seq, HIDDEN)
+        lstm_out, new_hidden = self.actor_lstm(features, hidden)
+        out = lstm_out[:, -1, :]         # último step de la secuencia
+
+        mean        = torch.tanh(self.actor_mean(out))
+        log_std     = self.actor_logstd.clamp(-5, 2)
+        std         = log_std.exp()
+        shoot_logit = self.actor_shoot(out).squeeze(-1)
+        return mean, std, shoot_logit, new_hidden
+    
+    def forward_critic(self, x, hidden) -> any:
+        """
+        x:      (batch, seq_len, INPUTS)  o  (batch, INPUTS)
+        hidden: (h, c) del LSTM crítico
+        Devuelve value, nuevo hidden
+        """
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        features = self.critic_trunk(x)
+        lstm_out, new_hidden = self.critic_lstm(features, hidden)
+        out   = lstm_out[:, -1, :]
+        value = self.critic_head(out).squeeze(-1)
+        return value, new_hidden
 
     def forward(self, x) -> any:
         # x: tensor (batch, INPUTS)
@@ -65,41 +146,80 @@ class PPOActorCritic(nn.Module):
         value = self.critic(features).squeeze(-1)
         return mean, std, shoot_logit, value
 
-    def get_action(self, x, deterministic=False) -> any:
-        mean, std, shoot_logit, value = self.forward(x)
+    def get_action(self, x, actor_hidden, critic_hidden, deterministic=False) -> any:
+        """
+        Usado en inferencia (process_step).
+        x: tensor (1, INPUTS) — un solo step
+        """
+        mean, std, shoot_logit, new_actor_h = self.forward_actor(x, actor_hidden)
+
         if deterministic:
-            move = mean
+            move  = mean
             shoot = (shoot_logit > 0).float()
         else:
-            # Exploración: muestrear de la propia distribución N(mean, std)
             noise = torch.randn_like(mean) * std
-            move = (mean + noise).clamp(-1, 1)
-            prob = torch.sigmoid(shoot_logit)
-            shoot = torch.bernoulli(prob).float()
-        # Calcular log_prob con la misma std (consistente)
-        log_prob_cont = -0.5 * (((move - mean) / (std + 1e-8)) ** 2 + 2 * std.log() + np.log(2 * np.pi)).sum(dim=-1)
+            move  = (mean + noise).clamp(-1, 1)
+            prob  = torch.sigmoid(shoot_logit)
+            shoot = torch.bernoulli(prob)
+
+        # Log prob de la acción tomada
+        log_prob_cont  = -0.5 * (
+            ((move - mean) / (std + 1e-8)) ** 2
+            + 2 * std.log()
+            + np.log(2 * np.pi)
+        ).sum(dim=-1)
         p = torch.sigmoid(shoot_logit)
         log_prob_shoot = shoot * p.log() + (1 - shoot) * (1 - p).log()
         log_prob = log_prob_cont + log_prob_shoot
-        return move, shoot, log_prob, value
 
-    def evaluate(self, x, actions) -> any:
-        """Calcula log_prob y valor para acciones dadas (necesario para PPO update)"""
-        mean, std, shoot_logit, value = self.forward(x)
-        move_act = actions[:, :3]
-        shoot_act = actions[:, 3].long()
-        # Log prob continua
-        log_prob_cont = -0.5 * (((move_act - mean) / std) ** 2 + 2 * std.log() + np.log(2 * np.pi)).sum(dim=-1)
-        # Log prob discreta
+        value, new_critic_h = self.forward_critic(x, critic_hidden)
+
+        return move, shoot, log_prob, value, new_actor_h, new_critic_h
+
+    def evaluate(self, states, actions, actor_hiddens_0, critic_hiddens_0) -> any:
+        """
+        Usado en el update PPO. Recalcula log_probs y values propagando el LSTM
+        sobre toda la secuencia del chunk.
+
+        states:          (batch, seq_len, INPUTS)
+        actions:         (batch, seq_len, 4)
+        actor_hiddens_0: (h0, c0) del inicio del chunk — shape (1, batch, HIDDEN)
+        critic_hiddens_0: ídem para crítico
+        """
+        # --- Actor ---
+        features_a = self.actor_trunk(states)                          # (B, T, HIDDEN)
+        lstm_out_a, _ = self.actor_lstm(features_a, actor_hiddens_0)   # (B, T, HIDDEN)
+
+        mean        = torch.tanh(self.actor_mean(lstm_out_a))          # (B, T, 3)
+        log_std     = self.actor_logstd.clamp(-5, 2)
+        std         = log_std.exp()
+        shoot_logit = self.actor_shoot(lstm_out_a).squeeze(-1)         # (B, T)
+
+        move_act  = actions[:, :, :3]                                  # (B, T, 3)
+        shoot_act = actions[:, :, 3].long()                            # (B, T)
+
+        log_prob_cont = -0.5 * (
+            ((move_act - mean) / (std + 1e-8)) ** 2
+            + 2 * std.log()
+            + np.log(2 * np.pi)
+        ).sum(dim=-1)                                                   # (B, T)
+
         p = torch.sigmoid(shoot_logit)
         log_prob_shoot = shoot_act * p.log() + (1 - shoot_act) * (1 - p).log()
-        log_prob = log_prob_cont + log_prob_shoot
-        # Entropía (para regularización)
+        log_probs = log_prob_cont + log_prob_shoot                      # (B, T)
+
+        # Entropía
         dim = 3
-        entropy_cont = 0.5 * (dim * (1 + np.log(2 * np.pi)) + (2 * std.log()).sum(dim=-1))
-        entropy_discrete = -(p * p.log() + (1 - p) * (1 - p).log())
-        entropy = (entropy_cont + entropy_discrete).mean()
-        return log_prob, value, entropy
+        entropy_cont    = 0.5 * (dim * (1 + np.log(2 * np.pi)) + (2 * std.log()).sum(dim=-1))
+        entropy_disc    = -(p * p.log() + (1 - p) * (1 - p).log())
+        entropy         = (entropy_cont + entropy_disc).mean()
+
+        # --- Crítico ---
+        features_c = self.critic_trunk(states)
+        lstm_out_c, _ = self.critic_lstm(features_c, critic_hiddens_0)
+        values = self.critic_head(lstm_out_c).squeeze(-1)               # (B, T)
+
+        return log_probs, values, entropy
 
 # ---------- Cliente servidor UDP ----------
 class PPOServer:
