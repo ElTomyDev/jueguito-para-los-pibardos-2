@@ -1,4 +1,5 @@
 import copy
+import queue
 
 import numpy as np
 import json
@@ -239,6 +240,7 @@ class PPOServer:
         self.last_actor_hidden = None   # hidden al INICIO del último step
         self.last_critic_hidden = None
 
+        self.notify_queue = queue.Queue()
         self.file_lock = threading.Lock()
         self.model_lock = threading.Lock()
         self.sock_lock = threading.Lock()
@@ -450,8 +452,7 @@ class PPOServer:
             print(f"[server] Error en entrenamiento del episodio {episode_num}: {e}")
         finally:
             # Notificar al cliente que puede continuar
-            with self.sock_lock:
-                self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), client_addr)
+            self.notify_queue.put(client_addr)
 
     # -------------------------------------------
     # --- Actualizacion y Control de archivos ---
@@ -509,12 +510,22 @@ class PPOServer:
     def run(self) -> None:
         self.load_model()
         while True:
-            data, addr = self.sock.recvfrom(65535)
+            # Notificaciones pendientes de workers
+            try:
+                addr = self.notify_queue.get_nowait()
+                self.sock.sendto(json.dumps({"type": "episode_ready"}).encode(), addr)
+            except queue.Empty:
+                pass
+
+            try:
+                data, addr = self.sock.recvfrom(65535)
+            except (socket.timeout, BlockingIOError):
+                continue
+
             msg = json.loads(data.decode())
             if msg["type"] == "step":
                 resp = self.process_step(msg)
-                with self.sock_lock:
-                    self.sock.sendto(json.dumps(resp).encode(), addr)
+                self.sock.sendto(json.dumps(resp).encode(), addr)
             elif msg["type"] == "episode_end":
                 self.process_episode_end(msg, addr)
 
