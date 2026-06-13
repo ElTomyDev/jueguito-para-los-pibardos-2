@@ -22,9 +22,9 @@ const TERM_TIMEOUT_MAX_PEN   : float = -20.0  # Penalización base por timeout (
 
 # --- Recompensas por paso (eventos) ---
 const R_DAMAGE_DEALT_MAX     : float = 10.0   # Por dañar al jugador
-const R_DAMAGE_TAKEN_MAX     : float = -5.0   # Por perder vida
-const R_PROXIMITY_MAX        : float = 0.02   # Por estar pegado al jugador
-const R_CLOSING_DIST_MAX     : float = 0.05   # Por acercarse al jugador
+const R_DAMAGE_TAKEN_MAX     : float = -25.0   # Por perder vida
+const R_PROXIMITY_MAX        : float = 0.005   # Por estar pegado al jugador
+const R_CLOSING_DIST_MAX     : float = 0.01   # Por acercarse al jugador
 const R_GOOD_AIM             : float = 0.2    # Por apuntar bien
 const R_NEAR_BULLET          : float = 5.0    # Por la bala pasar cerca del jugador
 const R_LIFE_STEP            : float = 0.001  # Por mantenerse con vida en cada paso
@@ -193,7 +193,7 @@ func _reset_health_tracking() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for _i in range(GlobalConst.INPUTS): inputs.append(0.0)
+		for _i in range(31): inputs.append(0.0)
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats
@@ -201,7 +201,7 @@ func _get_inputs_for_nn() -> Array:
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())  # 5 floats
 	else:
-		for _i in range(5): inputs.append(0.0)
+		for _i in range(9): inputs.append(0.0)
 
 	# Garantiza exactamente GlobalConst.INPUTS elementos
 	while inputs.size() < GlobalConst.INPUTS:

@@ -44,6 +44,8 @@ var auto_shot_timer: float = 0
 var auto_move_timer: int = 0
 var auto_jump_timer: int = 0
 
+var last_shot_step: int = 0
+
 func _ready() -> void:
 	init_player()
 	controls.setup(self)
@@ -70,10 +72,15 @@ func init_player() -> void:
 	viewport_size = get_viewport().get_visible_rect().size
 
 func get_inputs() -> Array:
+	
 	return [
 		health / max_health,
 		velocity.x / max_speed,
 		velocity.y / max_speed,
+		velocity.length(),
+		self.is_on_floor(),
+		sign(self.velocity.x),
+		(GlobalVars.current_step - self.last_shot_step) / GlobalConst.MAX_STEP_FOR_EPISODE,
 		global_position.x / viewport_size.x,
 		global_position.y / viewport_size.y,
 	]

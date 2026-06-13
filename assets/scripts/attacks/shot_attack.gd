@@ -61,7 +61,7 @@ func _shot(custom_dir:Vector2=Vector2.ZERO) -> void:
 	last_shot_step = GlobalVars.current_step
 	var bullet_instance = bullet.instantiate()
 	_set_bullet_values(bullet_instance, custom_dir)
-	
+	character.last_shot_step = GlobalVars.current_step
 	# Agrega la bala al 'esperado' nodo principal (en la escena main donde corre el juego)..
 	get_tree().get_root().add_child.call_deferred(bullet_instance)
 
@@ -93,7 +93,7 @@ func _init_boss_values() -> void:
 		return
 	gun_damage = 0.0
 	rotation_speed = 25.0
-	fire_rate = 0.8
+	fire_rate = 0.65
 	fire_timer = 0.0
 	bullet_life_time = 2.3
 	bullet_dispersion = 0.05

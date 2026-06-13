@@ -3,7 +3,7 @@ class_name BossController
 
 var viewport_size: Vector2 
 
-const MAX_BULLET_DETECTS: int = 4
+const MAX_BULLET_DETECTS: int = 3
 const HIT_HISTORY_SIZE = 5
 
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
@@ -41,6 +41,7 @@ var damage: float = 0.0
 var health: float = 0.0
 
 var last_shot_impact: Vector2 = Vector2.ZERO
+var last_shot_step: int = 0
 
 var bullet_from_group: StringName = "Boss"
 var bullet_to_group: StringName = "Players"
@@ -50,6 +51,7 @@ var bullets_detected: Array = []
 
 var near_player: PlayerController = null
 var near_bullet: Bullet = null
+
 
 func _ready() -> void:
 	init_boss()
@@ -154,6 +156,7 @@ func get_inputs() -> Array:
 		global_position.y / viewport_size.y,
 		GlobalVars.shot_impact.x / viewport_size.x,
 		GlobalVars.shot_impact.y / viewport_size.y,
+		(GlobalVars.current_step - self.last_shot_step) / GlobalConst.MAX_STEP_FOR_EPISODE,
 		velocity.x / max_speed,
 		velocity.y / max_speed,
 		health / max_health,
