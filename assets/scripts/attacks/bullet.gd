@@ -15,6 +15,8 @@ var from_group: StringName
 var group_target: StringName
 var target:Area2D = null
 
+var hit_target: bool = false
+
 func _ready() -> void:
 	
 	if boss_dir != Vector2.ZERO:
@@ -49,6 +51,7 @@ func _draw() -> void:
 	draw_line(Vector2.ZERO, Vector2(9,0), bullet_color, 4.0)
 
 func delete_bullet(player: PlayerController=null):
+	hit_target = true
 	if from_group == "Boss":
 		if not player:
 			GlobalVars.shot_impact = self.global_position

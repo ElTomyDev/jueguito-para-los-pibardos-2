@@ -54,7 +54,6 @@ var bullets_detected: Array = []
 var near_player: PlayerController = null
 var near_bullet: Bullet = null
 
-
 func _ready() -> void:
 	init_boss()
 
