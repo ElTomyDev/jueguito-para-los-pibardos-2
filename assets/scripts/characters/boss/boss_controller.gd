@@ -1,6 +1,8 @@
 extends CharacterBody2D
 class_name BossController
 
+signal boss_ready
+
 var viewport_size: Vector2 
 
 const MAX_BULLET_DETECTS: int = 3
@@ -81,20 +83,26 @@ func init_boss() -> void:
 		bullets_detected.append(null)
 	
 	GlobalVars.boss = self
+	boss_ready.emit()
 
 func update_boss(delta) -> void:
+	near_player = _get_near_player()
+	
 	if GlobalVars.nn_outputs.has("move_dir"):
 		var raw_dir = GlobalVars.nn_outputs["move_dir"]
 		if typeof(raw_dir) == TYPE_ARRAY and raw_dir.size() >= 2:
 			move_dir = Vector2(raw_dir[0], raw_dir[1])
-	
 	if GlobalVars.nn_outputs.has("action"):
 		current_action = int(GlobalVars.nn_outputs["action"]) if not force_attack_mode else attack_forced
-	
-	if GlobalVars.nn_outputs.has("shot_angle"):
+	if GlobalVars.nn_outputs.has("shot_angle") and is_instance_valid(near_player):
+		var offset_norm: float = GlobalVars.nn_outputs["shot_angle"]  # [-1, 1]
+		var max_deviation: float = PI / 2.0  # desvío máximo de 90°
+		var angle_to_player: float = (near_player.global_position - global_position).angle()
+		shot_angle = angle_to_player + offset_norm * max_deviation
+	elif GlobalVars.nn_outputs.has("shot_angle"):
+		# Fallback si no hay jugador: ángulo absoluto directo
 		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
 	
-	near_player = _get_near_player()
 	update_bullets_norm_info()
 	
 	_update_action(delta)
@@ -105,7 +113,8 @@ func update_boss(delta) -> void:
 
 func get_inputs() -> Array:	
 	var dist_to_player   = 1.0
-	var angle_to_player  = 0.0
+	var angle_to_player_raw: float = 0.0  # ángulo directo al jugador, normalizado
+	var angle_offset_norm: float = 0.0    # diferencia entre su shot_angle y el ángulo ideal
 	var player_vel       = Vector2.ZERO
 	var rel_vel          = Vector2.ZERO
 	var time_since_last  = 1.0
@@ -115,10 +124,12 @@ func get_inputs() -> Array:
 			global_position.distance_to(near_player.global_position) / viewport_size.length(),
 			0.0, 1.0
 		)
-		var to_player   = (near_player.global_position - global_position).angle()
-		angle_to_player = abs(wrapf(to_player - shot_angle, -PI, PI)) / PI
-		player_vel      = near_player.velocity.normalized()
-		rel_vel         = near_player.velocity - velocity
+		var to_player = (near_player.global_position - global_position).angle()
+		angle_to_player_raw = to_player / PI  # normalizado [-1, 1]
+		# Diferencia entre donde apunta y donde debería apuntar (el error de aim)
+		angle_offset_norm = wrapf(shot_angle - to_player, -PI, PI) / PI
+		player_vel  = near_player.velocity.normalized()
+		rel_vel     = near_player.velocity - velocity
 	
 	if shot_attack.last_shot_step > 0:
 		time_since_last = clamp(
@@ -161,7 +172,8 @@ func get_inputs() -> Array:
 		velocity.y / max_speed,
 		health / max_health,
 		dist_to_player,
-		angle_to_player,
+		angle_to_player_raw,
+		angle_offset_norm,     
 		rel_vel.x / max_speed,
 		rel_vel.y / max_speed,
 		player_vel.x,
@@ -259,7 +271,6 @@ func _on_bullet_detector_body_entered(bullet: Node2D) -> void:
 func _on_bullet_detector_body_exited(bullet: Node2D) -> void:
 	if not is_instance_valid(bullet):
 		return
-	# CORRECCIÓN: usa asignación directa, no insert()
 	var idx = bullets_detected.find(bullet)
 	if idx != -1:
 		bullets_detected[idx] = null

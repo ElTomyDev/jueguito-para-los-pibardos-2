@@ -18,7 +18,7 @@ from torch.distributions import Normal, Categorical
 # ------------------------------
 HOST = "127.0.0.1"
 PORT = 9999
-INPUT_DIM = 40                # Coincide con GlobalConst.INPUTS
+INPUT_DIM = 41                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 256   
 LR = 0.0001
@@ -90,8 +90,8 @@ class ActorCritic(nn.Module):
             log_prob = log_prob_move + log_prob_angle + log_prob_discrete
 
         # Normalizar salidas continuas a rangos válidos
-        move_xy = torch.tanh(move_xy)              # [-1, 1]
-        angle = torch.clamp(angle, -np.pi, np.pi)  # [-π, π]
+        move_xy = torch.tanh(move_xy) # [-1, 1]
+        angle = torch.tanh(angle)     # [-π, π]
         
         # Extraer valores escalares (para batch=1)
         if move_xy.dim() == 2 and move_xy.shape[0] == 1:

@@ -40,7 +40,9 @@ func move_bullet(delta:float) -> void:
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:
 		queue_free() 
-		GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))
+		var idx = GlobalVars.bullets.find(self)
+		if idx != -1:
+			GlobalVars.bullets.pop_at(idx)
 	life_time -= delta
 
 func _draw() -> void:
@@ -52,7 +54,9 @@ func delete_bullet(player: PlayerController=null):
 			GlobalVars.shot_impact = self.global_position
 		else:
 			GlobalVars.shot_impact = player.global_position
-	GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self)) # Elimina la bala de la variable global
+	var idx = GlobalVars.bullets.find(self)
+	if idx != -1:
+		GlobalVars.bullets.pop_at(idx)
 	queue_free()
 
 

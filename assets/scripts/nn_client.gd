@@ -4,26 +4,35 @@ class_name NNClient
 var _socket: PacketPeerUDP
 var _host: String = "127.0.0.1"
 var _port: int = 9999
-var _timeout_ms: int = 100   # tiempo máximo para considerar respuesta válida
+var _timeout_ms: int = 200  # subido de 100 a 200ms para tolerar backprop
 
-# Estado interno
 var _pending: bool = false
 var _last_action: Dictionary = {"move_dir": [0.0, 0.0], "shot_angle": 0.0, "action": 0}
 var _request_time: int = 0
+
+# Estadísticas de timeouts para diagnóstico
+var _timeout_count: int = 0
+var _total_requests: int = 0
+var _log_interval: int = 500  # loguea cada N requests
 
 func _init() -> void:
 	_socket = PacketPeerUDP.new()
 	_socket.connect_to_host(_host, _port)
 
-# Llamar a este método cada frame (desde _process o _physics_process)
 func poll() -> void:
 	if not _pending:
 		return
-	# Timeout: si pasó demasiado tiempo, cancelar la espera
 	if Time.get_ticks_msec() - _request_time > _timeout_ms:
+		_timeout_count += 1
 		_pending = false
+		# Log periódico para no spammear la consola
+		if _total_requests > 0 and _total_requests % _log_interval == 0:
+			var pct = 100.0 * _timeout_count / _total_requests
+			push_warning(
+                "NNClient: %d/%d timeouts (%.1f%%) — si supera 5%% revisá el servidor o aumentá _timeout_ms"
+				% [_timeout_count, _total_requests, pct]
+			)
 		return
-	# Verificar si llegó respuesta
 	if _socket.get_available_packet_count() > 0:
 		var raw = _socket.get_packet()
 		var response = JSON.parse_string(raw.get_string_from_utf8())
@@ -31,10 +40,10 @@ func poll() -> void:
 			_last_action = response
 		_pending = false
 
-# Enviar petición de acción (no bloqueante)
 func request_action(inputs: Array, reward: float) -> void:
 	if _pending:
-		return   # aún esperando respuesta anterior, ignorar nueva (o podrías encolar)
+		return
+	_total_requests += 1
 	var msg = JSON.stringify({
 		"type": "step",
 		"inputs": inputs,
@@ -44,15 +53,19 @@ func request_action(inputs: Array, reward: float) -> void:
 	_pending = true
 	_request_time = Time.get_ticks_msec()
 
-# Obtener la última acción recibida (devuelve inmediatamente)
 func get_last_action() -> Dictionary:
 	return _last_action
 
-# Para saber si está ocupado
 func is_busy() -> bool:
 	return _pending
 
-# Notificar fin de episodio (sigue bloqueante pero solo ocurre cada episodio, no afecta FPS)
+func get_timeout_stats() -> Dictionary:
+	return {
+		"timeouts": _timeout_count,
+		"total": _total_requests,
+		"pct": (100.0 * _timeout_count / _total_requests) if _total_requests > 0 else 0.0
+	}
+
 func notify_episode_end(episode: int, total_reward: float, final_reward: float) -> void:
 	var msg = JSON.stringify({
 		"type": "episode_end",

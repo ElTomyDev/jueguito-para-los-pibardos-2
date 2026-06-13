@@ -44,7 +44,6 @@ func _ready() -> void:
 	Engine.time_scale = 1.0
 	_load_train_data()
 	_init_nn_core()
-	_reset_health_tracking()
 	_reset_episode()
 
 func _physics_process(_delta: float) -> void:
@@ -120,13 +119,6 @@ func _calculate_reward() -> float:
 			var aim_reward = (1.0 - angle_diff / PI) * R_GOOD_AIM  # reducido a 0.05
 			reward += aim_reward
 	
-	# --- Si la bala pasa cerca del jugador ---
-	if GlobalVars.shot_impact != last_shot_impact:
-		var dist_to_player = GlobalVars.shot_impact.distance_to(p.global_position)
-		if dist_to_player < 100.0:
-			reward += R_NEAR_BULLET  # La bala del boss llegó cerca del jugador
-		last_shot_impact = GlobalVars.shot_impact
-	
 	# Actualizar valores para el próximo paso
 	last_player_health = p.health
 	last_boss_health   = b.health
@@ -166,34 +158,16 @@ func _handle_episode_end() -> void:
 	GlobalVars.current_episode += 1
 	
 	_reset_episode()
-	_reset_health_tracking()
 
-func _reset_health_tracking() -> void:
-	# Espera hasta que boss y player estén efectivamente en el árbol
-	var timeout = 0
-	while (not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty()) and timeout < 60:
-		await get_tree().physics_frame
-		timeout += 1
-	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]) and is_instance_valid(GlobalVars.boss):
-		last_dist_to_player = GlobalVars.boss.global_position.distance_to(GlobalVars.players[0].global_position)
-	if is_instance_valid(GlobalVars.boss):
-		last_boss_health = GlobalVars.boss.health
-	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
-		last_player_health = GlobalVars.players[0].health
-	last_dist_to_bullet = 0.0
-	
-	is_resetting = false
 
-# -------------------------------------------------------
-# Inputs — total debe coincidir con GlobalConst.INPUTS
-# Boss: 35, Player: 5 → total = 40
-# Asegurate de actualizar GlobalConst.INPUTS = 40
-# -------------------------------------------------------
+# ----------
+# Inputs
+# ----------
 
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for _i in range(31): inputs.append(0.0)
+		for _i in range(32): inputs.append(0.0)
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats
@@ -211,9 +185,9 @@ func _get_inputs_for_nn() -> Array:
 	
 	return inputs
 
-# -------------------------------------------------------
+# ------------
 # Utilidad
-# -------------------------------------------------------
+# ------------
 
 func _reset_episode() -> void:
 	for bullet in GlobalVars.bullets:
@@ -263,9 +237,19 @@ func _spawn_entities() -> void:
 				break
 		player_instance.global_position = player_pos
 		boss_instance.global_position   = boss_pos
+	
+	boss_instance.boss_ready.connect(_on_boss_ready.bind(player_instance, boss_instance), CONNECT_ONE_SHOT)
 
 	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)
+
+func _on_boss_ready(player_instance: PlayerController, boss_instance: BossController) -> void:
+	# En este punto ambos nodos están en el árbol y listos
+	last_dist_to_player = boss_instance.global_position.distance_to(player_instance.global_position)
+	last_boss_health    = boss_instance.health
+	last_player_health  = player_instance.health
+	last_dist_to_bullet = 0.0
+	is_resetting = false
 
 func _can_episode_end() -> bool:
 	if GlobalVars.players.is_empty(): return true
