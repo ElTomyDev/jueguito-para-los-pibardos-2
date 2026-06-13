@@ -4,7 +4,7 @@ class_name NNClient
 var _socket: PacketPeerUDP
 var _host: String = "127.0.0.1"
 var _port: int = 9999
-var _timeout_ms: int = 200  # subido de 100 a 200ms para tolerar backprop
+var _timeout_ms: int = 200
 
 var _pending: bool = false
 var _last_action: Dictionary = {"move_dir": [0.0, 0.0], "shot_angle": 0.0, "action": 0}

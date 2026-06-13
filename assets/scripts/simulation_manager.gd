@@ -224,11 +224,9 @@ func _handle_episode_end() -> void:
 	
 	_reset_episode()
 
-
 # ----------
 # Inputs
 # ----------
-
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
@@ -236,17 +234,14 @@ func _get_inputs_for_nn() -> Array:
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats
-
+	
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())  # 5 floats
 	else:
 		for _i in range(9): inputs.append(0.0)
-
-	# Garantiza exactamente GlobalConst.INPUTS elementos
-	while inputs.size() < GlobalConst.INPUTS:
-		inputs.append(0.0)
-	if inputs.size() > GlobalConst.INPUTS:
-		inputs = inputs.slice(0, GlobalConst.INPUTS)
+	
+	assert(inputs.size() == GlobalConst.INPUTS,
+		"_get_inputs_for_nn() retornó %d floats, se esperaban %d" % [inputs.size(), GlobalConst.INPUTS])
 	
 	return inputs
 
