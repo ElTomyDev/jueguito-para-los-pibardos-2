@@ -13,30 +13,28 @@ var viewport_size: Vector2
 # -------------------------------------------------------
 # REWARDS — todo en la misma escala, acumulado equilibrado
 # -------------------------------------------------------
-
 # --- Terminales ---
-const TERM_WIN_BASE        : float = 100.0   # Matar al jugador
-const TERM_WIN_TIME_BONUS  : float = 30.0    # Bonus por matarlo rápido
-const TERM_LOSE            : float = -100.0  # Boss muere (más penalización que antes)
-const TERM_TIMEOUT_PEN     : float = -30.0   # Timeout: base
+const TERM_WIN_BASE        : float = 100.0
+const TERM_WIN_TIME_BONUS  : float = 30.0
+const TERM_LOSE            : float = -100.0
+const TERM_TIMEOUT_PEN     : float = -30.0
 
-# --- Supervivencia (prioridad 1) ---
-const R_DODGE_BULLET       : float = 8.0     # Por cada bala del jugador que pasa cerca y NO impacta
-const R_DAMAGE_TAKEN_MAX   : float = -30.0   # Por recibir daño (negativo fuerte)
-const R_DODGE_DISTANCE_MIN : float = 60.0    # Distancia mínima para considerar "esquive cercano"
-const R_DODGE_DISTANCE_MAX : float = 150.0   # Distancia máxima para otorgar reward de esquive
+# --- Supervivencia ---
+const R_DAMAGE_TAKEN_MAX   : float = -150.0
+const R_DODGE_DISTANCE_MIN : float = 60.0
+const R_DODGE_DISTANCE_MAX : float = 150.0
+const R_ACTIVE_DODGE_GAIN   : float = 0.05   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_MAX    : float = 5.0  # máx por bala por frame (evita explotar)
+const R_PASSIVE_DODGE       : float = 2.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
-# --- Precisión de disparo (prioridad 2) ---
-const R_SHOT_GOOD_AIM      : float = 15.0    # Por disparar apuntando bien al momento del disparo
-const R_SHOT_HIT_PLAYER    : float = 12.0    # Por bala que impacta al jugador (confirmado)
-const R_DAMAGE_DEALT_MAX   : float = 20.0    # Por daño infligido (proporcional a la vida quitada)
+# --- Precisión ---
+const R_SHOT_GOOD_AIM      : float = 15.0
+const R_SHOT_HIT_PLAYER    : float = 12.0
+const R_DAMAGE_DEALT_MAX   : float = 20.0
 
-# --- Presión / posicionamiento (prioridad 4, fondo suave) ---
-const R_PROXIMITY_MAX      : float = 0.03    # Por estar cerca del jugador
-const R_CLOSING_DIST_MAX   : float = 0.02    # Por acercarse al jugador
-
-# --- Penalización por inactividad ---
-const R_IDLE_PENALTY       : float = -0.005  # Por elegir action=0 demasiado seguido
+# --- Inactividad ---
+const R_IDLE_PENALTY       : float = -0.05
+const IDLE_STREAK_THRESHOLD: int   = 120
 
 # NN
 var nn_client: NNClient
@@ -44,15 +42,11 @@ var nn_client: NNClient
 # Historial para deltas de salud
 var last_boss_health  : float = 0.0
 var last_player_health: float = 0.0
-var last_dist_to_bullet: float = 0.0
-var last_dist_to_player: float = 0.0
 var last_shot_impact: Vector2 = Vector2.ZERO
 
 # Tracking de aim al momento del disparo
 var last_boss_shot_step    : int = -1
 var _idle_streak           : int = 0       # pasos consecutivos en action=0
-const IDLE_STREAK_THRESHOLD: int = 120     # ~2 segundos a 60fps antes de penalizar
-
 # Tracking de balas del jugador para reward de esquive
 var _player_bullets_near_last_frame: Dictionary = {}  # bullet_id → distancia anterior
 
@@ -95,41 +89,51 @@ func _physics_process(_delta: float) -> void:
 func _calculate_reward() -> float:
 	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
 		return 0.0
-
+	
 	var p = GlobalVars.players[0]
 	var b = GlobalVars.boss
 	var reward = 0.0
-
+	
 	# ── 1. SUPERVIVENCIA: daño recibido ─────────────────────────────────────
 	var damage_taken = last_boss_health - b.health
 	if damage_taken > 0.0:
 		var taken_ratio = clamp(damage_taken / b.max_health, 0.0, 1.0)
-		reward += taken_ratio * R_DAMAGE_TAKEN_MAX  # fuertemente negativo
-
+		reward += taken_ratio * R_DAMAGE_TAKEN_MAX  # negativo
+	
 	# ── 1b. SUPERVIVENCIA: esquivar balas del jugador ────────────────────────
-	# Premiamos cuando una bala del jugador pasa cerca del boss sin impactar.
-	# "Pasa cerca" = estaba dentro de R_DODGE_DISTANCE_MAX y ahora se alejó
-	# (o expiró sin hit_target). Usamos el array GlobalVars.bullets filtrado.
+	# Primero actualizamos el frame actual con dist + hit_target
 	var current_player_bullets: Dictionary = {}
 	for bullet in GlobalVars.bullets:
 		if is_instance_valid(bullet) and bullet.from_group == "Players":
 			var dist = b.global_position.distance_to(bullet.global_position)
-			current_player_bullets[bullet.get_instance_id()] = dist
-
-	# Balas que estaban cerca el frame anterior y ya no están (pasaron o expiraron)
-	for bid in _player_bullets_near_last_frame:
-		if not current_player_bullets.has(bid):
-			var prev_dist = _player_bullets_near_last_frame[bid]
-			# Solo si estaba en rango de "peligro cercano" y no fue un hit
-			if prev_dist < R_DODGE_DISTANCE_MAX and prev_dist > R_DODGE_DISTANCE_MIN:
-				reward += R_DODGE_BULLET  # esquivó activamente
-
+			current_player_bullets[bullet.get_instance_id()] = {
+				"dist": dist,
+				"hit": bullet.hit_target
+			}
+	
+	for bullet_id in _player_bullets_near_last_frame:
+		var prev = _player_bullets_near_last_frame[bullet_id]
+		var prev_dist = prev["dist"]
+		var prev_hit = prev["hit"]
+		# Si la bala aún existe en este frame
+		if current_player_bullets.has(bullet_id):
+			var curr_dist = current_player_bullets[bullet_id]["dist"]
+			var curr_hit = current_player_bullets[bullet_id]["hit"]
+			# Si no ha impactado todavía
+			if not curr_hit and not prev_hit and curr_dist < R_DODGE_DISTANCE_MAX:
+				var dist_change = prev_dist - curr_dist   # positiva si se acerca, negativa si se aleja
+				if dist_change < 0:  # se está alejando
+					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN, 0.0, R_ACTIVE_DODGE_MAX)
+					reward += active_reward
+		else:
+			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
+			if not prev_hit and prev_dist < R_DODGE_DISTANCE_MAX and prev_dist > R_DODGE_DISTANCE_MIN:
+				reward += R_PASSIVE_DODGE
 	_player_bullets_near_last_frame = current_player_bullets
-
+	
 	# ── 2. PRECISIÓN: aim en el momento del disparo ──────────────────────────
 	var boss_shot_step = b.shot_attack.last_shot_step
 	if boss_shot_step > last_boss_shot_step and boss_shot_step > 0:
-		# Hubo un disparo nuevo este step
 		last_boss_shot_step = boss_shot_step
 		if is_instance_valid(b.near_player):
 			var angle_to_player = atan2(
@@ -137,37 +141,22 @@ func _calculate_reward() -> float:
 				p.global_position.x - b.global_position.x
 			)
 			var angle_diff = abs(wrapf(b.shot_angle - angle_to_player, -PI, PI))
-			# Reward proporcional a la precisión: 1.0 = perfecto, 0.0 = 90° de error
 			var aim_quality = clamp(1.0 - (angle_diff / (PI / 2.0)), 0.0, 1.0)
 			reward += aim_quality * R_SHOT_GOOD_AIM
-
+	
 	# ── 2b. PRECISIÓN: bala del boss que impactó al jugador ──────────────────
-	# Usamos GlobalVars.shot_impact que se actualiza SOLO en delete_bullet()
-	# (hit real), así que este check ahora es correcto después del fix en bullet.gd
 	if GlobalVars.shot_impact != last_shot_impact:
 		var dist_impact_to_player = GlobalVars.shot_impact.distance_to(p.global_position)
 		if dist_impact_to_player < 80.0:
 			reward += R_SHOT_HIT_PLAYER
 		last_shot_impact = GlobalVars.shot_impact
-
+	
 	# ── 2c. Daño infligido al jugador ────────────────────────────────────────
 	var damage_dealt = last_player_health - p.health
 	if damage_dealt > 0.0:
 		var dmg_ratio = clamp(damage_dealt / p.max_health, 0.0, 1.0)
 		reward += dmg_ratio * R_DAMAGE_DEALT_MAX
-
-	# ── 4. PRESIÓN: proximidad y acercamiento ────────────────────────────────
-	var b_dist = b.global_position.distance_to(p.global_position)
-	var max_dist = viewport_size.length()
-	var dist_norm = clamp(b_dist / max_dist, 0.0, 1.0)
-	reward += (1.0 - dist_norm) * R_PROXIMITY_MAX
-
-	if last_dist_to_player > 0.0:
-		var dist_change = last_dist_to_player - b_dist
-		var delta_norm = clamp(dist_change / max_dist, -0.1, 0.1)
-		reward += delta_norm * R_CLOSING_DIST_MAX
-	last_dist_to_player = b_dist
-
+	
 	# ── Penalización por inactividad prolongada ──────────────────────────────
 	if b.current_action == 0:
 		_idle_streak += 1
@@ -175,36 +164,31 @@ func _calculate_reward() -> float:
 			reward += R_IDLE_PENALTY * (_idle_streak - IDLE_STREAK_THRESHOLD)
 	else:
 		_idle_streak = 0
-
+	
 	# ── Actualizar tracking ──────────────────────────────────────────────────
 	last_player_health = p.health
 	last_boss_health   = b.health
-
+	
 	return reward
 
 func _calculate_final_reward() -> float:
-	var steps_used   = float(GlobalVars.current_step)
-	var max_steps    = float(GlobalConst.MAX_STEP_FOR_EPISODE)
-	var time_ratio   = 1.0 - clamp(steps_used / max_steps, 0.0, 1.0)  # 1=rápido, 0=lento
+	var steps_used = float(GlobalVars.current_step)
+	var max_steps  = float(GlobalConst.MAX_STEP_FOR_EPISODE)
+	var time_ratio = 1.0 - clamp(steps_used / max_steps, 0.0, 1.0)
 	
-	# Victoria: jugador muerto
 	if GlobalVars.players.is_empty() or \
 	   (not GlobalVars.players.is_empty() and GlobalVars.players[0].health <= 0.0):
 		return TERM_WIN_BASE + time_ratio * TERM_WIN_TIME_BONUS  # 100..130
 	
-	# Derrota: boss muerto
 	if is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
-		# Penalización reducida si le quitó mucha vida al jugador antes de morir
 		var player_dmg_ratio = 0.0
 		if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 			player_dmg_ratio = 1.0 - (GlobalVars.players[0].health / GlobalVars.players[0].max_health)
 		return TERM_LOSE + player_dmg_ratio * 40.0  # entre -100 y -60
 	
-	# Timeout: nadie murió
 	var player_hp_ratio = 1.0
 	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 		player_hp_ratio = GlobalVars.players[0].health / GlobalVars.players[0].max_health
-	# Más penalización si el jugador quedó sano, menos si lo desgastó
 	return TERM_TIMEOUT_PEN * player_hp_ratio  # entre -30 y 0
 
 func _handle_episode_end() -> void:
@@ -308,10 +292,8 @@ func _spawn_entities() -> void:
 
 func _on_boss_ready(player_instance: PlayerController, boss_instance: BossController) -> void:
 	# En este punto ambos nodos están en el árbol y listos
-	last_dist_to_player = boss_instance.global_position.distance_to(player_instance.global_position)
 	last_boss_health    = boss_instance.health
 	last_player_health  = player_instance.health
-	last_dist_to_bullet = 0.0
 	is_resetting = false
 
 func _can_episode_end() -> bool:

@@ -20,7 +20,7 @@ var reward_plot: PlotItem
 
 var view_graph: bool = true
 var view_train_info: bool = true
-var graph_x_margin: int = 10
+var graph_x_margin: int = 5
 
 var update_rate: int = 10
 
