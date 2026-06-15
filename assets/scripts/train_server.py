@@ -21,20 +21,46 @@ PORT = 9999
 INPUT_DIM = 41                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 256   
-LR = 0.0003
+LR = 0.0001
 GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_EPS = 0.2
-ENTROPY_COEF = 0.06
+ENTROPY_COEF = 0.065
 VALUE_COEF = 0.5
 MAX_GRAD_NORM = 0.5
-EPOCHS = 3
-BATCH_SIZE = 64
+EPOCHS = 5
+BATCH_SIZE = 128
 BUFFER_SIZE = 8192
 MODEL_SAVE_PATH = "./assets/train_data/boss_brain.pth"
 MODEL_LOAD_PATH = "./assets/train_data/boss_brain.pth"   # None para empezar de cero
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class RunningMeanStd:
+    def __init__(self, shape=()) -> None:
+        self.mean = np.zeros(shape, dtype=np.float32)
+        self.var = np.ones(shape, dtype=np.float32)
+        self.count = 1e-4
+
+    def update(self, x) -> None:
+        batch_mean = np.mean(x, axis=0)
+        batch_var = np.var(x, axis=0)
+        batch_count = x.shape[0]
+        self.mean, self.var, self.count = self._update_mean_var_count_from_moments(
+            self.mean, self.var, self.count, batch_mean, batch_var, batch_count
+        )
+
+    @staticmethod
+    def _update_mean_var_count_from_moments(mean, var, count, batch_mean, batch_var, batch_count) -> tuple:
+        delta = batch_mean - mean
+        tot_count = count + batch_count
+        new_mean = mean + delta * batch_count / tot_count
+        m_a = var * count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + np.square(delta) * count * batch_count / tot_count
+        new_var = M2 / tot_count
+        new_count = tot_count
+        return new_mean, new_var, new_count
 
 # ------------------------------
 # Red neuronal Actor-Crítico
@@ -52,8 +78,8 @@ class ActorCritic(nn.Module):
         self.move_x_mean = nn.Linear(hidden_size, 1)
         self.move_y_mean = nn.Linear(hidden_size, 1)
         self.angle_mean = nn.Linear(hidden_size, 1)
-        self.log_std_move = nn.Parameter(torch.zeros(2))   # std para move_x y move_y
-        self.log_std_angle = nn.Parameter(torch.zeros(1))
+        self.log_std_move = nn.Parameter(torch.full((2,), -0.7))   # std para move_x y move_y
+        self.log_std_angle = nn.Parameter(torch.full((1,), -1.0))
         self.discrete_logits = nn.Linear(hidden_size, discrete_actions)
         self.critic = nn.Linear(hidden_size, 1)
 
@@ -213,6 +239,8 @@ class PPOAgent:
         self.buffer = RolloutBuffer(config['buffer_size'], config['gamma'], config['gae_lambda'])
         self.episode_count = 0
         self.total_steps = 0
+        self.obs_rms = RunningMeanStd(shape=(INPUT_DIM,))
+        self.reward_scale = 0.1   # divide la recompensa entre 10
         if config['model_load_path']:
             try:
                 self.load_model(config['model_load_path'])
@@ -221,7 +249,8 @@ class PPOAgent:
                 print("No se encontró modelo previo, empezando desde cero.")
 
     def get_action(self, state, deterministic=False)  -> tuple:
-        state_t = torch.FloatTensor(state).unsqueeze(0).to(device)
+        norm_state = (state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
+        state_t = torch.FloatTensor(norm_state).unsqueeze(0).to(device)
         with torch.no_grad():
             action_dict, log_prob, value = self.network.get_action_and_logprob(state_t, deterministic)
         log_prob_val = log_prob.item() if log_prob is not None else 0.0
@@ -229,8 +258,14 @@ class PPOAgent:
         return action_dict, log_prob_val, value_val
 
     def store_transition(self, state, action, reward, done, log_prob, value) -> None:
-        self.buffer.add(state, action, reward, done, log_prob, value)
+        # Normaliza state antes de almacenar
+        norm_state = (state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
+        # Escalar reward
+        scaled_reward = reward * self.reward_scale
+        self.buffer.add(norm_state, action, scaled_reward, done, log_prob, value)
         self.total_steps += 1
+        # Actualizar estadísticas con el estado original (para ir aprendiendo la media/var real)
+        self.obs_rms.update(np.array([state]))
 
     def update(self, last_value=0.0) -> None:
         if len(self.buffer.states) == 0:
@@ -271,7 +306,10 @@ class PPOAgent:
             'network_state_dict': self.network.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'episode_count': self.episode_count,
-            'total_steps': self.total_steps
+            'total_steps': self.total_steps,
+            'obs_rms_mean': self.obs_rms.mean,
+            'obs_rms_var': self.obs_rms.var,
+            'obs_rms_count': self.obs_rms.count
         }, path)
         print(f"Modelo guardado en {path}")
 
@@ -281,6 +319,11 @@ class PPOAgent:
         self.optimizer.load_state_dict(chk['optimizer_state_dict'])
         self.episode_count = chk.get('episode_count', 0)
         self.total_steps = chk.get('total_steps', 0)
+        # Cargar estadísticas de normalización si existen
+        if 'obs_rms_mean' in chk:
+            self.obs_rms.mean = chk['obs_rms_mean']
+            self.obs_rms.var = chk['obs_rms_var']
+            self.obs_rms.count = chk['obs_rms_count']
 
 # ------------------------------
 # Servidor UDP

@@ -20,7 +20,7 @@ var reward_plot: PlotItem
 
 var view_graph: bool = true
 var view_train_info: bool = true
-var graph_x_margin: int = 5
+var graph_x_margin: int = 10
 
 var update_rate: int = 10
 
@@ -63,7 +63,7 @@ func update_label_view() -> void:
 		view_train_info = !view_train_info
 	if Input.is_action_just_pressed("toggle_graphs"):
 		view_graph = !view_graph
-	
+
 func update_reward_graph() -> void:
 	if reward_graph:
 		if Input.is_action_just_pressed("g_right"):

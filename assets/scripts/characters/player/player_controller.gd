@@ -105,9 +105,9 @@ func update_get_state() -> void:
 		if GlobalVars.current_episode % 10 == 0:
 			current_auto_state = randi_range(0, 2)
 	else:
-		if GlobalVars.current_episode > 500:
+		if GlobalVars.current_episode > 5000:
 			current_auto_state = 2
-		elif GlobalVars.current_episode > 200:
+		elif GlobalVars.current_episode > 2000:
 			current_auto_state = 1
 		else:
 			current_auto_state = 0
@@ -133,11 +133,11 @@ func _auto_shot(state: int, delta: float) -> void:
 
 func _chill_shot_state() -> void:
 	if is_instance_valid(GlobalVars.boss):
-		auto_fire_rate = 1.5
+		auto_fire_rate = 1.0
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
-				GlobalVars.boss.global_position + Vector2(randf_range(-150, 150), randf_range(-150, 150)),
+				GlobalVars.boss.global_position,
 				100.0,
 				shot_attack,
 				false
@@ -146,7 +146,7 @@ func _chill_shot_state() -> void:
 
 func _normal_shot_state() -> void:
 	if is_instance_valid(GlobalVars.boss):
-		auto_fire_rate = 1.0
+		auto_fire_rate = 0.5
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
@@ -159,11 +159,11 @@ func _normal_shot_state() -> void:
 
 func _hard_shot_state() -> void:
 	if is_instance_valid(GlobalVars.boss):
-		auto_fire_rate = 0.5
+		auto_fire_rate = 0.35
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
-				GlobalVars.boss.global_position + Vector2(randf_range(-50, 50), randf_range(-50, 50)),
+				GlobalVars.boss.global_position + Vector2(randf_range(-150, 150), randf_range(-150, 150)),
 				100.0,
 				shot_attack,
 				false

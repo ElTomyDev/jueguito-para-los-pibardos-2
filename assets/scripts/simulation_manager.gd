@@ -20,15 +20,15 @@ const TERM_LOSE            : float = -100.0
 const TERM_TIMEOUT_PEN     : float = -30.0
 
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -150.0
+const R_DAMAGE_TAKEN_MAX   : float = -175.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
 const R_DODGE_DISTANCE_MAX : float = 150.0
 const R_ACTIVE_DODGE_GAIN   : float = 0.05   # por cada unidad de distancia que se aleja
 const R_ACTIVE_DODGE_MAX    : float = 5.0  # máx por bala por frame (evita explotar)
-const R_PASSIVE_DODGE       : float = 2.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
+const R_PASSIVE_DODGE       : float = 0.1   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_SHOT_GOOD_AIM      : float = 15.0
+const R_SHOT_GOOD_AIM      : float = 85.0
 const R_SHOT_HIT_PLAYER    : float = 12.0
 const R_DAMAGE_DEALT_MAX   : float = 20.0
 
