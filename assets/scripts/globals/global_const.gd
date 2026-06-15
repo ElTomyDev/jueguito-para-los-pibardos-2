@@ -1,6 +1,6 @@
 extends Node
 
-const INPUTS: int = 45
+const INPUTS: int = 42
 
 const MAX_STEP_FOR_EPISODE: int = 5000
 
