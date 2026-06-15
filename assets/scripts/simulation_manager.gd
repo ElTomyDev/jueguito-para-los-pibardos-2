@@ -194,6 +194,7 @@ func _calculate_final_reward() -> float:
 
 func _handle_episode_end() -> void:
 	is_resetting = true
+	GlobalVars.current_episode += 1
 	
 	var final_reward: float = _calculate_final_reward()
 	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward)
@@ -205,7 +206,6 @@ func _handle_episode_end() -> void:
 	_save_train_data()
 	
 	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
-	GlobalVars.current_episode += 1
 	
 	_reset_episode()
 

@@ -307,9 +307,9 @@ class PPOAgent:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'episode_count': self.episode_count,
             'total_steps': self.total_steps,
-            'obs_rms_mean': self.obs_rms.mean,
-            'obs_rms_var': self.obs_rms.var,
-            'obs_rms_count': self.obs_rms.count
+            'obs_rms_mean': self.obs_rms.mean.tolist(),
+            'obs_rms_var': self.obs_rms.var.tolist(),
+            'obs_rms_count': float(self.obs_rms.count)
         }, path)
         print(f"Modelo guardado en {path}")
 
@@ -321,8 +321,8 @@ class PPOAgent:
         self.total_steps = chk.get('total_steps', 0)
         # Cargar estadísticas de normalización si existen
         if 'obs_rms_mean' in chk:
-            self.obs_rms.mean = chk['obs_rms_mean']
-            self.obs_rms.var = chk['obs_rms_var']
+            self.obs_rms.mean  = np.array(chk['obs_rms_mean'], dtype=np.float32)
+            self.obs_rms.var   = np.array(chk['obs_rms_var'],  dtype=np.float32)
             self.obs_rms.count = chk['obs_rms_count']
 
 # ------------------------------
