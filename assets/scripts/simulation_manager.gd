@@ -20,21 +20,21 @@ const TERM_LOSE            : float = -100.0
 const TERM_TIMEOUT_PEN     : float = -30.0
 
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -175.0
+const R_DAMAGE_TAKEN_MAX   : float = -60.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
-const R_DODGE_DISTANCE_MAX : float = 150.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.05   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = 5.0  # máx por bala por frame (evita explotar)
-const R_PASSIVE_DODGE       : float = 0.1   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
+const R_DODGE_DISTANCE_MAX : float = 200.0
+const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_MAX    : float = 20.0  # máx por bala por frame (evita explotar)
+const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_SHOT_GOOD_AIM      : float = 85.0
-const R_SHOT_HIT_PLAYER    : float = 12.0
-const R_DAMAGE_DEALT_MAX   : float = 20.0
+const R_SHOT_GOOD_AIM      : float = 25.0
+const R_SHOT_HIT_PLAYER    : float = 40.0
+const R_DAMAGE_DEALT_MAX   : float = 50.0
 
 # --- Inactividad ---
-const R_IDLE_PENALTY       : float = -0.05
-const IDLE_STREAK_THRESHOLD: int   = 120
+const R_IDLE_PENALTY       : float = -0.15
+const IDLE_STREAK_THRESHOLD: int   = 60
 
 # NN
 var nn_client: NNClient
@@ -123,7 +123,8 @@ func _calculate_reward() -> float:
 			if not curr_hit and not prev_hit and curr_dist < R_DODGE_DISTANCE_MAX:
 				var dist_change = prev_dist - curr_dist   # positiva si se acerca, negativa si se aleja
 				if dist_change < 0:  # se está alejando
-					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN, 0.0, R_ACTIVE_DODGE_MAX)
+					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
+					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
 					reward += active_reward
 		else:
 			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
@@ -214,7 +215,7 @@ func _handle_episode_end() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for _i in range(32): inputs.append(0.0)
+		for _i in range(33): inputs.append(0.0)
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats

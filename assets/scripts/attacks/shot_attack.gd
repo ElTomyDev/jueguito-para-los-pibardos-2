@@ -1,5 +1,5 @@
 extends Node2D
-class_name  ShotAttack
+class_name ShotAttack
 
 @export_category("Bullet Settings")
 @export var bullet_life_time: float = 2.3
@@ -19,10 +19,10 @@ class_name  ShotAttack
 
 var character: CharacterBody2D = null
 
-# Momento del ultimo disparo
 var last_shot_step: int = 0
 
-var fire_timer: float = fire_rate
+# FIX: fire_timer arranca en fire_rate para evitar disparo inmediato en frame 1
+var fire_timer: float = 0.0
 var total_bullet_damage: float
 
 func setup(body: CharacterBody2D) -> void:
@@ -38,47 +38,46 @@ func boss_shot(delta: float) -> void:
 	if (character is PlayerController) or not is_instance_valid(character):
 		return
 	fire_timer -= delta
-	if fire_timer <= 0: # Si el tiempo para disparar llega a 0 o menos.
-		_shot()
-		fire_timer = fire_rate
-		last_shot_step = GlobalVars.current_step
+	if fire_timer <= 0:
+		if character.can_shot():  # solo dispara si la acción es "ataque"
+			_shot()
+			last_shot_step = GlobalVars.current_step
+			character.last_shot_step = GlobalVars.current_step
+		fire_timer = fire_rate  # resetea siempre, haya disparado o no
 
 func players_shot(delta: float) -> void:
 	if (character is BossController) or not is_instance_valid(character):
-		return 
-	
+		return
+
 	if is_instance_valid(gun_sprite):
 		Utils.view_to(self.global_position, get_global_mouse_position(), rotation_speed, self)
-	
-	if Input.is_action_pressed("shot"): # Si presiona el mouse para disparar
-		fire_timer -= delta # Resta el tiempo para poder disparar
-		
-	if fire_timer <= 0: # Si el tiempo para disparar llega a 0 o menos.
+
+	if Input.is_action_pressed("shot"):
+		fire_timer -= delta
+
+	if fire_timer <= 0:
 		_shot()
 		fire_timer = fire_rate
 
-func _shot(custom_dir:Vector2=Vector2.ZERO) -> void:
-	last_shot_step = GlobalVars.current_step
+func _shot(custom_dir: Vector2 = Vector2.ZERO) -> void:
 	var bullet_instance = bullet.instantiate()
 	_set_bullet_values(bullet_instance, custom_dir)
-	character.last_shot_step = GlobalVars.current_step
-	# Agrega la bala al 'esperado' nodo principal (en la escena main donde corre el juego)..
 	get_tree().get_root().add_child.call_deferred(bullet_instance)
 
-func _set_bullet_values(bullet_instence: Bullet, custom_bullet_dir:Vector2) -> void:
+func _set_bullet_values(bullet_instence: Bullet, custom_bullet_dir: Vector2) -> void:
 	if !(bullet_instence is Bullet): push_error("'bullet_instance' debe ser una bala.")
-	
+
 	bullet_instence.global_position = shot_point.global_position if is_instance_valid(shot_point) else character.global_position
-	bullet_instence.life_time = bullet_life_time
-	bullet_instence.damage = _get_total_bullet_damage()
-	bullet_instence.from_group = character.bullet_from_group
-	bullet_instence.group_target = character.bullet_to_group
-	bullet_instence.bullet_color = bullet_color
-	
+	bullet_instence.life_time       = bullet_life_time
+	bullet_instence.damage          = _get_total_bullet_damage()
+	bullet_instence.from_group      = character.bullet_from_group
+	bullet_instence.group_target    = character.bullet_to_group
+	bullet_instence.bullet_color    = bullet_color
+
 	var disp_x = randf_range(-bullet_dispersion, bullet_dispersion)
 	var disp_y = randf_range(-bullet_dispersion, bullet_dispersion)
 	if character is PlayerController:
-		bullet_instence.boss_dir = Vector2.ZERO
+		bullet_instence.boss_dir   = Vector2.ZERO
 		bullet_instence.player_dir = Utils.view_to(
 			self.global_position,
 			get_global_mouse_position() + Vector2(disp_x, disp_y),
@@ -86,16 +85,16 @@ func _set_bullet_values(bullet_instence: Bullet, custom_bullet_dir:Vector2) -> v
 		) if custom_bullet_dir == Vector2.ZERO else custom_bullet_dir
 	if character is BossController:
 		bullet_instence.player_dir = Vector2.ZERO
-		bullet_instence.boss_dir = Vector2(cos(character.shot_angle), sin(character.shot_angle)) + Vector2(disp_x, disp_y)
+		bullet_instence.boss_dir   = Vector2(cos(character.shot_angle), sin(character.shot_angle)) + Vector2(disp_x, disp_y)
 
 func _init_boss_values() -> void:
 	if !(character is BossController) or not is_instance_valid(character):
 		return
-	gun_damage = 0.0
-	rotation_speed = 25.0
-	fire_rate = 0.65
-	fire_timer = 0.0
-	bullet_life_time = 2.3
+	gun_damage        = 0.0
+	rotation_speed    = 25.0
+	fire_rate         = 0.65
+	fire_timer        = fire_rate
+	bullet_life_time  = 2.3
 	bullet_dispersion = 0.05
 
 func _get_total_bullet_damage() -> float:

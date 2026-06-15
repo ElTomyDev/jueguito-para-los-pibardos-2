@@ -43,7 +43,7 @@ var damage: float = 0.0
 var health: float = 0.0
 
 var last_shot_impact: Vector2 = Vector2.ZERO
-var last_shot_step: int = 0
+var last_shot_step: int = -1
 
 var bullet_from_group: StringName = "Boss"
 var bullet_to_group: StringName = "Players"
@@ -116,7 +116,7 @@ func get_inputs() -> Array:
 	var angle_offset_norm: float = 0.0    # diferencia entre su shot_angle y el ángulo ideal
 	var player_vel       = Vector2.ZERO
 	var rel_vel          = Vector2.ZERO
-	var time_since_last  = 1.0
+	var time_since_last: float
 	
 	if is_instance_valid(near_player):
 		dist_to_player = clamp(
@@ -130,18 +130,16 @@ func get_inputs() -> Array:
 		player_vel  = near_player.velocity.normalized()
 		rel_vel     = near_player.velocity - velocity
 	
-	if shot_attack.last_shot_step > 0:
+	var src_last_shot = shot_attack.last_shot_step if is_instance_valid(shot_attack) else -1
+	if src_last_shot <= 0:
+		time_since_last = 1.0
+	else:
 		time_since_last = clamp(
-			float(GlobalVars.current_step - shot_attack.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
+			float(GlobalVars.current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
 			0.0, 1.0
 		)
 	
 	var dist_to_center = global_position.distance_to(viewport_size / 2) / viewport_size.length()
-
-	# --- Construcción de inputs de balas APLANADOS (floats individuales) ---
-	# bullets_dist:      4 floats
-	# bullets_positions: 8 floats (pos_x, pos_y por cada bala)
-	# bullets_velocity:  8 floats (vel_x, vel_y por cada bala)
 	var b_dist: Array = []
 	var b_pos:  Array = []
 	var b_vel:  Array = []
@@ -166,7 +164,7 @@ func get_inputs() -> Array:
 		global_position.y / viewport_size.y,
 		GlobalVars.shot_impact.x / viewport_size.x,
 		GlobalVars.shot_impact.y / viewport_size.y,
-		(GlobalVars.current_step - self.last_shot_step) / GlobalConst.MAX_STEP_FOR_EPISODE,
+		time_since_last,
 		velocity.x / max_speed,
 		velocity.y / max_speed,
 		health / max_health,
@@ -177,8 +175,9 @@ func get_inputs() -> Array:
 		rel_vel.y / max_speed,
 		player_vel.x,
 		player_vel.y,
-		time_since_last,
 		dist_to_center,
+		float(current_action),
+		GlobalVars.current_step / GlobalConst.MAX_STEP_FOR_EPISODE
 	]
 	# + 4 + 8 + 8 = 20 inputs de balas → total boss = 35
 	inputs.append_array(b_dist)

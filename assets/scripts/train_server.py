@@ -18,19 +18,19 @@ from torch.distributions import Normal, Categorical
 # ------------------------------
 HOST = "127.0.0.1"
 PORT = 9999
-INPUT_DIM = 41                # Coincide con GlobalConst.INPUTS
+INPUT_DIM = 45                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 256   
-LR = 0.0001
+LR = 0.00005
 GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_EPS = 0.2
-ENTROPY_COEF = 0.065
+ENTROPY_COEF = 0.10
 VALUE_COEF = 0.5
 MAX_GRAD_NORM = 0.5
 EPOCHS = 5
-BATCH_SIZE = 128
-BUFFER_SIZE = 8192
+BATCH_SIZE = 64
+BUFFER_SIZE = 4096
 MODEL_SAVE_PATH = "./assets/train_data/boss_brain.pth"
 MODEL_LOAD_PATH = "./assets/train_data/boss_brain.pth"   # None para empezar de cero
 
@@ -40,7 +40,7 @@ class RunningMeanStd:
     def __init__(self, shape=()) -> None:
         self.mean = np.zeros(shape, dtype=np.float32)
         self.var = np.ones(shape, dtype=np.float32)
-        self.count = 1e-4
+        self.count = 1000.0
 
     def update(self, x) -> None:
         batch_mean = np.mean(x, axis=0)
@@ -78,8 +78,8 @@ class ActorCritic(nn.Module):
         self.move_x_mean = nn.Linear(hidden_size, 1)
         self.move_y_mean = nn.Linear(hidden_size, 1)
         self.angle_mean = nn.Linear(hidden_size, 1)
-        self.log_std_move = nn.Parameter(torch.full((2,), -0.7))   # std para move_x y move_y
-        self.log_std_angle = nn.Parameter(torch.full((1,), -1.0))
+        self.log_std_move = nn.Parameter(torch.full((2,), -0.5))   # std para move_x y move_y
+        self.log_std_angle = nn.Parameter(torch.full((1,), -0.7))
         self.discrete_logits = nn.Linear(hidden_size, discrete_actions)
         self.critic = nn.Linear(hidden_size, 1)
 
@@ -240,7 +240,7 @@ class PPOAgent:
         self.episode_count = 0
         self.total_steps = 0
         self.obs_rms = RunningMeanStd(shape=(INPUT_DIM,))
-        self.reward_scale = 0.1   # divide la recompensa entre 10
+        self.reward_scale = 0.05   # divide la recompensa entre 10
         if config['model_load_path']:
             try:
                 self.load_model(config['model_load_path'])

@@ -94,6 +94,8 @@ func dead_if_can() -> void:
 # --- Mecanicas automaticas ---
 # -----------------------------
 func update_automatic_mechanics(delta: float) -> void:
+	if Input.is_action_just_pressed("is_automatic_player"):
+		is_automatic = !is_automatic
 	if is_automatic:
 		
 		update_get_state()
