@@ -184,9 +184,9 @@ func get_inputs() -> Array:
 		dist_to_center,
 		float(current_action),                                                                                                                        
 		GlobalVars.current_step / GlobalConst.MAX_STEP_FOR_EPISODE,
-		mouse_pos.x / viewport_size.x,
-		mouse_pos.y / viewport_size.y,
-		dist_to_mouse
+		#mouse_pos.x / viewport_size.x,
+		#mouse_pos.y / viewport_size.y,
+		#dist_to_mouse
 	]
 	# + 4 + 8 + 8 = 20 inputs de balas → total boss = 35
 	inputs.append_array(b_dist)

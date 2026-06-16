@@ -22,7 +22,7 @@ const TERM_TIMEOUT_PEN     : float = -30.0
 # --- Supervivencia ---
 const R_DAMAGE_TAKEN_MAX   : float = -135.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
-const R_DODGE_DISTANCE_MAX : float = 200.0
+const R_DODGE_DISTANCE_MAX : float = 500.0
 const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
 const R_ACTIVE_DODGE_MAX    : float = 20.0  # máx por bala por frame (evita explotar)
 const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
@@ -62,6 +62,7 @@ func _process(delta: float) -> void:
 	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 		if Input.is_action_just_pressed("is_automatic_player"):
 			GlobalVars.players[0].is_automatic = !GlobalVars.players[0].is_automatic
+	
 
 func _physics_process(_delta: float) -> void:
 	if is_resetting: return
@@ -133,7 +134,7 @@ func _calculate_reward() -> float:
 				if dist_change > 0:
 					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
 					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
-					reward -= active_reward
+					reward -= active_reward/2
 		else:
 			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
 			if not prev_hit and prev_dist < R_DODGE_DISTANCE_MAX and prev_dist > R_DODGE_DISTANCE_MIN:
@@ -202,7 +203,6 @@ func _calculate_final_reward() -> float:
 
 func _handle_episode_end() -> void:
 	is_resetting = true
-	GlobalVars.current_episode += 1
 	
 	var final_reward: float = _calculate_final_reward()
 	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward)
@@ -213,6 +213,7 @@ func _handle_episode_end() -> void:
 		GlobalVars.best_avg_episode = GlobalVars.current_episode
 	_save_train_data()
 	
+	GlobalVars.current_episode += 1
 	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
 	
 	_reset_episode()
@@ -223,7 +224,7 @@ func _handle_episode_end() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for _i in range(36): inputs.append(0.0)
+		for _i in range(33): inputs.append(0.0)
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats

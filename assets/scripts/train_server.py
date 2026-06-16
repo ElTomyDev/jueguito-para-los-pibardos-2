@@ -18,7 +18,7 @@ from torch.distributions import Normal, Categorical
 # ------------------------------
 HOST = "127.0.0.1"
 PORT = 9999
-INPUT_DIM = 41                # Coincide con GlobalConst.INPUTS
+INPUT_DIM = 38                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 512   
 LR = 0.00005
