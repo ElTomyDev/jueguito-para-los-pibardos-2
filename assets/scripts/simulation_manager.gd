@@ -41,7 +41,7 @@ const R_NEAR_WALLS          : float = -0.2
 const R_STATIC              : float = -0.1
 
 # --- Umbrales y margenes ---
-const WALL_MARGIN      : float = 85.0
+const WALL_MARGIN      : float = 120.0
 const MIN_VEL_TRESHOLD : float = 5.0
 
 # NN
@@ -195,14 +195,15 @@ func _calculate_reward() -> float:
 		_idle_streak = 0
 	
 	# ── Penalización por estar cerca de las paredes ──────────────────────────────
-	var too_close_to_wall = (
-		b.global_position.x < WALL_MARGIN or
-		b.global_position.x > viewport_size.x - WALL_MARGIN or
-		b.global_position.y < WALL_MARGIN or
-		b.global_position.y > viewport_size.y - WALL_MARGIN
+	var wall_dist = min(
+		b.global_position.x,
+		viewport_size.x - b.global_position.x,
+		b.global_position.y,
+		viewport_size.y - b.global_position.y
 	)
-	if too_close_to_wall:
-		reward += R_NEAR_WALLS
+	if wall_dist < WALL_MARGIN:
+		var wall_factor = 1.0 - (wall_dist / WALL_MARGIN)
+		reward += R_NEAR_WALLS * wall_factor  # proporcional, no binaria
 	
 	# ── Penalización por quedarse quieto ──────────────────────────────
 	if b.velocity.length() < MIN_VEL_TRESHOLD:
@@ -221,17 +222,20 @@ func _calculate_final_reward() -> float:
 	
 	if GlobalVars.players.is_empty() or \
 	   (not GlobalVars.players.is_empty() and GlobalVars.players[0].health <= 0.0):
+		GlobalVars.boss_wins += 1
 		return TERM_WIN_BASE + time_ratio * TERM_WIN_TIME_BONUS  # 100..130
 	
 	if is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
 		var player_dmg_ratio = 0.0
 		if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 			player_dmg_ratio = 1.0 - (GlobalVars.players[0].health / GlobalVars.players[0].max_health)
+		GlobalVars.player_wins += 1
 		return TERM_LOSE + player_dmg_ratio * 40.0  # entre -100 y -60
 	
 	var player_hp_ratio = 1.0
 	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 		player_hp_ratio = GlobalVars.players[0].health / GlobalVars.players[0].max_health
+		GlobalVars.timeouts += 1
 	return TERM_TIMEOUT_PEN * player_hp_ratio  # entre -30 y 0
 
 func _handle_episode_end() -> void:
@@ -247,6 +251,7 @@ func _handle_episode_end() -> void:
 	_save_train_data()
 	
 	GlobalVars.current_episode += 1
+	GlobalVars.best_episode_rewards.append(GlobalVars.best_avg_reward)
 	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
 	
 	_reset_episode()
@@ -257,7 +262,7 @@ func _handle_episode_end() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss): # Crea 0.0 por la cantidad de inputs que devuelve SOLO el boss
-		for _i in range(32): inputs.append(0.0)
+		for _i in range(GlobalConst.INPUTS): inputs.append(0.0)
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())
@@ -358,12 +363,20 @@ func _load_train_data() -> void:
 		GlobalVars.best_avg_reward   = data.get('best_avg_reward', -1e9)
 		GlobalVars.best_avg_episode  = data.get('best_avg_episode', 0)
 		GlobalVars.episode_rewards   = data.get('episodes_rewards', [])
+		GlobalVars.best_episode_rewards = data.get('best_episode_rewards', [])
+		GlobalVars.player_wins = data.get('player_wins', 0)
+		GlobalVars.boss_wins = data.get('boss_wins', 0)
+		GlobalVars.timeouts = data.get('timeouts', 0)
 
 func _save_train_data() -> void:
 	var data: Dictionary = {
 		'episode':        GlobalVars.current_episode,
 		'best_avg_reward':  GlobalVars.best_avg_reward,
 		'best_avg_episode': GlobalVars.best_avg_episode,
-		'episodes_rewards': GlobalVars.episode_rewards
+		'episodes_rewards': GlobalVars.episode_rewards,
+		'best_episode_rewards': GlobalVars.best_episode_rewards,
+		'player_wins': GlobalVars.player_wins,
+		'boss_wins': GlobalVars.boss_wins,
+		'timeouts': GlobalVars.timeouts
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)

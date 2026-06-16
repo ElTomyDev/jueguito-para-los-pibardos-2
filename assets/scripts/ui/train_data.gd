@@ -17,6 +17,7 @@ extends CanvasLayer
 
 var episode_rewards: Array = []
 var reward_plot: PlotItem
+var best_reward_plot: PlotItem
 
 var view_graph: bool = true
 var view_train_info: bool = true
@@ -65,30 +66,26 @@ func update_label_view() -> void:
 		view_graph = !view_graph
 
 func update_reward_graph() -> void:
-	if reward_graph:
-		if Input.is_action_just_pressed("g_right"):
-			reward_graph.x_max += 10
-		if Input.is_action_just_pressed("g_left"):
-			reward_graph.x_max -= 10
-		if Input.is_action_just_pressed("g_up"):
-			reward_graph.y_min -= 10
-			reward_graph.y_max += 10
-		if Input.is_action_just_pressed("g_down"):
-			reward_graph.y_min += 10
-			reward_graph.y_max -= 10
 	if reward_graph and not reward_plot:
-		reward_plot = reward_graph.add_plot_item("", Color.YELLOW)
+		reward_plot = reward_graph.add_plot_item("", Color.BLUE)
+		best_reward_plot = reward_graph.add_plot_item("", Color.RED)
 		# Carga inicial de todos los puntos existentes
 		for i in GlobalVars.episode_rewards.size():
 			if i % graph_x_margin == 0:
 				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+		for i in GlobalVars.best_episode_rewards.size():
+			if i % graph_x_margin == 0:
+				best_reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
 		_last_plotted_episode = GlobalVars.episode_rewards.size() - 1
 		return
-		
+	
 	# Solo agrega los puntos nuevos
 	var current_size = GlobalVars.episode_rewards.size()
 	if current_size > 0 and _last_plotted_episode < current_size - 1:
 		for i in range(_last_plotted_episode + 1, current_size):
 			if i % graph_x_margin == 0:
 				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+		for i in range(_last_plotted_episode + 1, current_size):
+			if i % graph_x_margin == 0:
+				best_reward_plot.add_point(Vector2(i, GlobalVars.best_episode_rewards[i]))
 		_last_plotted_episode = current_size - 1
