@@ -31,6 +31,7 @@ const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa s
 const R_SHOT_GOOD_AIM      : float = 35.0
 const R_SHOT_HIT_PLAYER    : float = 45.5
 const R_DAMAGE_DEALT_MAX   : float = 95.0
+const R_GOOD_AIM           : float = 0.8
 
 # --- Inactividad ---
 const R_IDLE_PENALTY       : float = -0.15
@@ -140,7 +141,7 @@ func _calculate_reward() -> float:
 	var boss_shot_step = b.shot_attack.last_shot_step
 	if boss_shot_step > last_boss_shot_step and boss_shot_step > 0:
 		last_boss_shot_step = boss_shot_step
-		if is_instance_valid(b.near_player) and b.current_action == 1:
+		if is_instance_valid(b.near_player):
 			var angle_to_player = atan2(
 				p.global_position.y - b.global_position.y,
 				p.global_position.x - b.global_position.x
@@ -161,6 +162,16 @@ func _calculate_reward() -> float:
 	if damage_dealt > 0.0:
 		var dmg_ratio = clamp(damage_dealt / p.max_health, 0.0, 1.0)
 		reward += dmg_ratio * R_DAMAGE_DEALT_MAX
+	
+	# ── 2d. AIM DENSO: recompensa por frame cuando está en modo ataque ──────────
+	if is_instance_valid(b.near_player) and b.current_action == 1:
+		var angle_to_player_dense = atan2(
+			p.global_position.y - b.global_position.y,
+			p.global_position.x - b.global_position.x
+		)
+		var angle_diff_dense = abs(wrapf(b.shot_angle - angle_to_player_dense, -PI, PI))
+		var aim_quality_dense = clamp(1.0 - (angle_diff_dense / (PI / 2.0)), 0.0, 1.0)
+		reward += aim_quality_dense * R_GOOD_AIM
 	
 	# ── Penalización por inactividad prolongada ──────────────────────────────
 	if b.current_action == 0:
@@ -222,10 +233,10 @@ func _get_inputs_for_nn() -> Array:
 		for _i in range(32): inputs.append(0.0)
 		return inputs
 	
-	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats
+	inputs.append_array(GlobalVars.boss.get_inputs())
 	
 	if is_instance_valid(GlobalVars.boss.near_player):
-		inputs.append_array(GlobalVars.boss.near_player.get_inputs())  # 5 floats
+		inputs.append_array(GlobalVars.boss.near_player.get_inputs())
 	else:# Crea 0.0 por la cantidad de inputs que devuelve SOLO el jugador
 		for _i in range(5): inputs.append(0.0)
 	

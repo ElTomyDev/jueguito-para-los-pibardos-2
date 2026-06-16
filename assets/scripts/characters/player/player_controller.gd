@@ -100,9 +100,9 @@ func update_get_state() -> void:
 		if GlobalVars.current_episode % 10 == 0:
 			current_auto_state = randi_range(0, 2)
 	else:
-		if GlobalVars.current_episode > 500:
+		if GlobalVars.current_episode > 1000:
 			current_auto_state = 2
-		elif GlobalVars.current_episode > 1000:
+		elif GlobalVars.current_episode > 500:
 			current_auto_state = 1
 		else:
 			current_auto_state = 0
