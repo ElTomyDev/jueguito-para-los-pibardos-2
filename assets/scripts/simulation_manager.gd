@@ -23,7 +23,7 @@ const TERM_TIMEOUT_PEN     : float = -30.0
 const R_DAMAGE_TAKEN_MAX   : float = -135.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_GAIN   : float = -0.4   # por cada unidad de distancia que se aleja
 const R_ACTIVE_DODGE_MAX    : float = 20.0  # máx por bala por frame (evita explotar)
 const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
@@ -34,7 +34,7 @@ const R_DAMAGE_DEALT_MAX   : float = 95.0
 
 # --- Inactividad ---
 const R_IDLE_PENALTY       : float = -0.15
-const IDLE_STREAK_THRESHOLD: int   = 60
+const IDLE_STREAK_THRESHOLD: int   = 20
 
 # NN
 var nn_client: NNClient
@@ -62,7 +62,6 @@ func _process(delta: float) -> void:
 	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 		if Input.is_action_just_pressed("is_automatic_player"):
 			GlobalVars.players[0].is_automatic = !GlobalVars.players[0].is_automatic
-	
 
 func _physics_process(_delta: float) -> void:
 	if is_resetting: return
@@ -127,14 +126,10 @@ func _calculate_reward() -> float:
 			# Si no ha impactado todavía
 			if not curr_hit and not prev_hit and curr_dist < R_DODGE_DISTANCE_MAX:
 				var dist_change = prev_dist - curr_dist   # positiva si se acerca, negativa si se aleja
-				if dist_change < 0:  # se está alejando
+				if dist_change > 0:  # se está acercando
 					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
 					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
 					reward += active_reward
-				if dist_change > 0:
-					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
-					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
-					reward -= active_reward/2
 		else:
 			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
 			if not prev_hit and prev_dist < R_DODGE_DISTANCE_MAX and prev_dist > R_DODGE_DISTANCE_MIN:
@@ -224,7 +219,7 @@ func _handle_episode_end() -> void:
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
 	if not is_instance_valid(GlobalVars.boss):
-		for _i in range(33): inputs.append(0.0)
+		for _i in range(32): inputs.append(0.0)
 		return inputs
 	
 	inputs.append_array(GlobalVars.boss.get_inputs())  # 35 floats

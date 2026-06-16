@@ -18,14 +18,14 @@ from torch.distributions import Normal, Categorical
 # ------------------------------
 HOST = "127.0.0.1"
 PORT = 9999
-INPUT_DIM = 38                # Coincide con GlobalConst.INPUTS
+INPUT_DIM = 37                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 512   
 LR = 0.00005
 GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_EPS = 0.2
-ENTROPY_COEF = 0.1
+ENTROPY_COEF = 0.03
 VALUE_COEF = 0.5
 MAX_GRAD_NORM = 0.5
 EPOCHS = 5

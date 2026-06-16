@@ -114,7 +114,6 @@ func get_inputs() -> Array:
 	var dist_to_player  = 1.0
 	var dist_to_mouse: float = 1.0
 	var angle_to_player_raw: float = 0.0  # ángulo directo al jugador, normalizado
-	var angle_offset_norm: float = 0.0    # diferencia entre su shot_angle y el ángulo ideal
 	var player_vel       = Vector2.ZERO
 	var rel_vel          = Vector2.ZERO
 	var time_since_last: float
@@ -126,8 +125,6 @@ func get_inputs() -> Array:
 		)
 		var to_player = (near_player.global_position - global_position).angle()
 		angle_to_player_raw = to_player / PI  # normalizado [-1, 1]
-		# Diferencia entre donde apunta y donde debería apuntar (el error de aim)
-		angle_offset_norm = wrapf(shot_angle - to_player, -PI, PI) / PI
 		player_vel  = near_player.velocity.normalized()
 		rel_vel     = near_player.velocity - velocity
 	
@@ -175,8 +172,7 @@ func get_inputs() -> Array:
 		velocity.y / max_speed,
 		health / max_health,
 		dist_to_player,
-		angle_to_player_raw,
-		angle_offset_norm,     
+		angle_to_player_raw,  
 		rel_vel.x / max_speed,
 		rel_vel.y / max_speed,
 		player_vel.x,
