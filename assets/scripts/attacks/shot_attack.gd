@@ -92,10 +92,10 @@ func _init_boss_values() -> void:
 		return
 	gun_damage        = 0.0
 	rotation_speed    = 25.0
-	fire_rate         = 0.65
+	fire_rate         = 0.45
 	fire_timer        = fire_rate
 	bullet_life_time  = 2.3
-	bullet_dispersion = 0.05
+	bullet_dispersion = 0.08
 
 func _get_total_bullet_damage() -> float:
 	return gun_damage if not character else gun_damage + character.damage

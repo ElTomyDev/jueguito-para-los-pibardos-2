@@ -24,7 +24,7 @@ const R_DAMAGE_TAKEN_MAX   : float = -135.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
 const R_ACTIVE_DODGE_GAIN   : float = -0.4   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = 20.0  # máx por bala por frame (evita explotar)
+const R_ACTIVE_DODGE_MAX    : float = -20.0  # máx por bala por frame (evita explotar)
 const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
@@ -128,7 +128,7 @@ func _calculate_reward() -> float:
 				var dist_change = prev_dist - curr_dist   # positiva si se acerca, negativa si se aleja
 				if dist_change > 0:  # se está acercando
 					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
-					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
+					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), R_ACTIVE_DODGE_MAX, 0.0)
 					reward += active_reward
 		else:
 			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
@@ -140,7 +140,7 @@ func _calculate_reward() -> float:
 	var boss_shot_step = b.shot_attack.last_shot_step
 	if boss_shot_step > last_boss_shot_step and boss_shot_step > 0:
 		last_boss_shot_step = boss_shot_step
-		if is_instance_valid(b.near_player):
+		if is_instance_valid(b.near_player) and b.current_action == 1:
 			var angle_to_player = atan2(
 				p.global_position.y - b.global_position.y,
 				p.global_position.x - b.global_position.x
@@ -218,7 +218,7 @@ func _handle_episode_end() -> void:
 # ----------
 func _get_inputs_for_nn() -> Array:
 	var inputs: Array = []
-	if not is_instance_valid(GlobalVars.boss):
+	if not is_instance_valid(GlobalVars.boss): # Crea 0.0 por la cantidad de inputs que devuelve SOLO el boss
 		for _i in range(32): inputs.append(0.0)
 		return inputs
 	
@@ -226,7 +226,7 @@ func _get_inputs_for_nn() -> Array:
 	
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())  # 5 floats
-	else:
+	else:# Crea 0.0 por la cantidad de inputs que devuelve SOLO el jugador
 		for _i in range(5): inputs.append(0.0)
 	
 	assert(inputs.size() == GlobalConst.INPUTS,
