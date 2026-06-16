@@ -20,18 +20,18 @@ const TERM_LOSE            : float = -100.0
 const TERM_TIMEOUT_PEN     : float = -30.0
 
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -135.0
+const R_DAMAGE_TAKEN_MAX   : float = -120.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = -0.4   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = -20.0  # máx por bala por frame (evita explotar)
-const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
+const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_MAX    : float = 10.0  # máx por bala por frame (evita explotar)
+const R_PASSIVE_DODGE       : float = 1.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_SHOT_GOOD_AIM        : float = 35.0
-const R_SHOT_HIT_PLAYER      : float = 45.5
+const R_SHOT_GOOD_AIM        : float = 45.0
+const R_SHOT_HIT_PLAYER      : float = 50.5
 const R_DAMAGE_DEALT_MAX     : float = 95.0
-const R_GOOD_AIM             : float = 0.8
+const R_GOOD_AIM             : float = 1.0
 const R_SHOT_AND_NEAR_PLAYER : float = 0.3
 
 # --- Inactividad y movimiento ---
@@ -41,8 +41,8 @@ const R_NEAR_WALLS          : float = -0.2
 const R_STATIC              : float = -0.1
 
 # --- Umbrales y margenes ---
-const WALL_MARGIN      : float = 80.0
-const MIN_VEL_TRESHOLD : float = 10.0
+const WALL_MARGIN      : float = 85.0
+const MIN_VEL_TRESHOLD : float = 5.0
 
 # NN
 var nn_client: NNClient
@@ -134,9 +134,9 @@ func _calculate_reward() -> float:
 			# Si no ha impactado todavía
 			if not curr_hit and not prev_hit and curr_dist < R_DODGE_DISTANCE_MAX:
 				var dist_change = prev_dist - curr_dist   # positiva si se acerca, negativa si se aleja
-				if dist_change > 0:  # se está acercando
+				if dist_change < 0:  # se está alejando
 					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
-					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), R_ACTIVE_DODGE_MAX, 0.0)
+					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
 					reward += active_reward
 		else:
 			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
@@ -170,7 +170,7 @@ func _calculate_reward() -> float:
 		var dmg_ratio = clamp(damage_dealt / p.max_health, 0.0, 1.0)
 		reward += dmg_ratio * R_DAMAGE_DEALT_MAX
 	
-	# ── 2d. PRECISIÓN:: recompensa por frame cuando está en modo ataque ──────────
+	# ── 2d. PRECISIÓN: recompensa por frame cuando está en modo ataque ──────────
 	if is_instance_valid(b.near_player) and b.current_action == 1:
 		var angle_to_player_dense = atan2(
 			p.global_position.y - b.global_position.y,
@@ -180,7 +180,7 @@ func _calculate_reward() -> float:
 		var aim_quality_dense = clamp(1.0 - (angle_diff_dense / (PI / 2.0)), 0.0, 1.0)
 		reward += aim_quality_dense * R_GOOD_AIM
 	
-	# ── 2e. PRECISIÓN:: recompensa por por acercarse al jugador en modo ataque ──────────
+	# ── 2e. PRECISIÓN: recompensa por por acercarse al jugador en modo ataque ──────────
 	if b.current_action == 1 and is_instance_valid(b.near_player):
 		var dist = b.global_position.distance_to(b.near_player.global_position)
 		var proximity_bonus = clamp(1.0 - (dist / viewport_size.length()), 0.0, 1.0)

@@ -21,7 +21,7 @@ PORT = 9999
 INPUT_DIM = 37                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 256   
-LR = 0.0001
+LR = 0.00005
 GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_EPS = 0.15
@@ -239,6 +239,7 @@ class PPOAgent:
         self.buffer = RolloutBuffer(config['buffer_size'], config['gamma'], config['gae_lambda'])
         self.episode_count = 0
         self.total_steps = 0
+        self.recent_rewards = []
         self.obs_rms = RunningMeanStd(shape=(INPUT_DIM,))
         self.reward_scale = 0.05   # divide la recompensa entre 10
         if config['model_load_path']:
@@ -288,7 +289,7 @@ class PPOAgent:
                 self.optimizer.step()
         self.buffer.clear()
 
-    def end_episode(self, last_state=None) -> None:
+    def end_episode(self, total_ep_reward:float, last_state=None) -> None:
         last_value = 0.0
         if last_state is not None:
             state_t = torch.FloatTensor(last_state).unsqueeze(0).to(device)
@@ -296,10 +297,17 @@ class PPOAgent:
                 _, _, value = self.network.get_action_and_logprob(state_t)
                 last_value = value.item()
         self.update(last_value)
-        self.episode_count += 1
-        print(f"Episodio {self.episode_count} terminado. Pasos totales: {self.total_steps}")
+        
+        self.recent_rewards.append(total_ep_reward)
+        if len(self.recent_rewards) > 20:
+            self.recent_rewards.pop(0)
+        avg = sum(self.recent_rewards) / len(self.recent_rewards)
+        print(f"Ep {self.episode_count} | avg(20): {avg:.1f} | steps: {self.total_steps} | total_reward: {total_ep_reward}")
+        
         if self.episode_count % 10 == 0:
             self.save_model(self.config['model_save_path'])
+
+        self.episode_count += 1
 
     def save_model(self, path) -> None:
         torch.save({
@@ -339,6 +347,7 @@ class GodotRLServer:
         self.current_action = None
         self.current_log_prob = None
         self.current_value = None
+        self.episode_reward = 0.0
 
     def run(self) -> None:
         print(f"Servidor escuchando en {HOST}:{PORT}")
@@ -364,7 +373,7 @@ class GodotRLServer:
     def handle_step(self, msg, addr) -> None:
         inputs = msg.get('inputs', [0.0]*INPUT_DIM)
         reward = msg.get('reward', 0.0)
-
+        self.episode_reward += reward
         if self.current_state is None:
             action, log_p, val = self.agent.get_action(inputs)
             self.current_state = inputs
@@ -398,6 +407,7 @@ class GodotRLServer:
 
     def handle_episode_end(self, msg, addr) -> None:
         final_reward = msg.get('reward', 0.0)
+        self.episode_reward += final_reward
         if self.current_state is not None:
             self.agent.store_transition(
                 state=self.current_state,
@@ -409,7 +419,8 @@ class GodotRLServer:
             )
             self.current_state = None
             self.current_action = None
-        self.agent.end_episode(last_state=None)
+        self.agent.end_episode(self.episode_reward, last_state=None)
+        self.episode_reward = 0.0
         ack = {'type': 'episode_ready'}
         self.sock.sendto(json.dumps(ack).encode('utf-8'), addr)
 

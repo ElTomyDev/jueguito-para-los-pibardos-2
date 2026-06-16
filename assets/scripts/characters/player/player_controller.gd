@@ -108,14 +108,27 @@ func update_get_state() -> void:
 			current_auto_state = 0
 
 func update_auto_dir() -> void:
-	if not is_instance_valid(near_bullet): return
+	if not is_instance_valid(GlobalVars.boss): return
 	
-	var bullet_pos = near_bullet.global_position
-	
-	if bullet_pos.x < self.global_position.x:
-		auto_dir = 1
-	if bullet_pos.x > self.global_position.x:
-		auto_dir = -1
+	if is_instance_valid(near_bullet):
+		var bullet_pos = near_bullet.global_position
+		if bullet_pos.x < self.global_position.x:
+			auto_dir = 1
+		if bullet_pos.x > self.global_position.x:
+			auto_dir = -1
+	else:
+		if self.global_position.distance_to(GlobalVars.boss.global_position) > 450.0:
+			if GlobalVars.boss.global_position.x < self.global_position.x:
+				auto_dir = 1
+			if GlobalVars.boss.global_position.x > self.global_position.x:
+				auto_dir = -1
+		elif self.global_position.distance_to(GlobalVars.boss.global_position) > 450.0:
+			if GlobalVars.boss.global_position.x < self.global_position.x:
+				auto_dir = -1
+			if GlobalVars.boss.global_position.x > self.global_position.x:
+				auto_dir = 1
+		else:
+			auto_dir = 0
 
 # --- Disparo automatico ---
 func _auto_shot(state: int, delta: float) -> void:
@@ -171,13 +184,15 @@ func _hard_shot_state() -> void:
 
 # --- Movimiento automatico ---
 func _auto_move(delta: float) -> void:
+	if not is_instance_valid(GlobalVars.boss): return
 	near_bullet = _get_near_bullet()
+	update_auto_dir()
 	if not is_instance_valid(near_bullet) or self.global_position.distance_to(near_bullet.global_position) > 65.0:
-		velocity.x = 0.0
+		if self.global_position.distance_to(GlobalVars.boss.global_position) <= 450.0:
+			velocity.x = 7000 * delta * auto_dir
 	else:
-		update_auto_dir()
 		velocity.x = 7000 * delta * auto_dir
-		if global_position.distance_to(near_bullet.global_position) <= 25.0 and self.is_on_floor() and near_bullet.global_position.y > self.global_position.y:
+		if global_position.distance_to(near_bullet.global_position) <= 30.0 and self.is_on_floor() and near_bullet.global_position.y > self.global_position.y - 10:
 			velocity.y -= randi_range(20000, 40000) * delta
 
 func _get_near_bullet() -> Bullet:
