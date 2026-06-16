@@ -111,7 +111,8 @@ func update_boss(delta) -> void:
 	global_position.y = clamp(global_position.y, 0.0, viewport_size.y)
 
 func get_inputs() -> Array:	
-	var dist_to_player   = 1.0
+	var dist_to_player  = 1.0
+	var dist_to_mouse: float = 1.0
 	var angle_to_player_raw: float = 0.0  # ángulo directo al jugador, normalizado
 	var angle_offset_norm: float = 0.0    # diferencia entre su shot_angle y el ángulo ideal
 	var player_vel       = Vector2.ZERO
@@ -157,7 +158,12 @@ func get_inputs() -> Array:
 			b_pos.append(0.0)
 			b_vel.append(0.0)
 			b_vel.append(0.0)
-
+	
+	var mouse_pos: Vector2 = get_global_mouse_position()
+	dist_to_mouse = clamp(
+			global_position.distance_to(mouse_pos) / viewport_size.length(),
+			0.0, 1.0
+		)
 	# 15 inputs fijos del boss
 	var inputs = [
 		global_position.x / viewport_size.x,
@@ -176,8 +182,11 @@ func get_inputs() -> Array:
 		player_vel.x,
 		player_vel.y,
 		dist_to_center,
-		float(current_action),
-		GlobalVars.current_step / GlobalConst.MAX_STEP_FOR_EPISODE
+		float(current_action),                                                                                                                        
+		GlobalVars.current_step / GlobalConst.MAX_STEP_FOR_EPISODE,
+		mouse_pos.x / viewport_size.x,
+		mouse_pos.y / viewport_size.y,
+		dist_to_mouse
 	]
 	# + 4 + 8 + 8 = 20 inputs de balas → total boss = 35
 	inputs.append_array(b_dist)

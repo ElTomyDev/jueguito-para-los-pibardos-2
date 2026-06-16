@@ -33,7 +33,7 @@ var dir_hor: int = Vector2.AXIS_X # Vector que se encarga de manejar la direccio
 var player_id: int = 0
 var bullet_from_group: StringName = "Players" # Grupo al que pertenece la bala
 var bullet_to_group: StringName = "Boss" # Target de la bala
-
+var near_bullet: Bullet = null
 var auto_vel: float = 1800.0
 var auto_dir: int = 1
 
@@ -75,11 +75,7 @@ func get_inputs() -> Array:
 	
 	return [
 		health / max_health,
-		velocity.x / max_speed,
-		velocity.y / max_speed,
-		velocity.length(),
 		self.is_on_floor(),
-		sign(self.velocity.x),
 		(GlobalVars.current_step - self.last_shot_step) / GlobalConst.MAX_STEP_FOR_EPISODE,
 		global_position.x / viewport_size.x,
 		global_position.y / viewport_size.y,
@@ -94,13 +90,10 @@ func dead_if_can() -> void:
 # --- Mecanicas automaticas ---
 # -----------------------------
 func update_automatic_mechanics(delta: float) -> void:
-	if Input.is_action_just_pressed("is_automatic_player"):
-		is_automatic = !is_automatic
 	if is_automatic:
-		
 		update_get_state()
 		_auto_shot(current_auto_state, delta)
-		_auto_move(current_auto_state, delta)
+		_auto_move(delta)
 
 func update_get_state() -> void:
 	if random_states:
@@ -115,10 +108,14 @@ func update_get_state() -> void:
 			current_auto_state = 0
 
 func update_auto_dir() -> void:
-	if self.global_position.x >= viewport_size.x - 30.0:
-		auto_dir = -1
-	if self.global_position.x <= 30.0:
+	if not is_instance_valid(near_bullet): return
+	
+	var bullet_pos = near_bullet.global_position
+	
+	if bullet_pos.x < self.global_position.x:
 		auto_dir = 1
+	if bullet_pos.x > self.global_position.x:
+		auto_dir = -1
 
 # --- Disparo automatico ---
 func _auto_shot(state: int, delta: float) -> void:
@@ -135,7 +132,7 @@ func _auto_shot(state: int, delta: float) -> void:
 
 func _chill_shot_state() -> void:
 	if is_instance_valid(GlobalVars.boss):
-		auto_fire_rate = 1.0
+		auto_fire_rate = 0.5
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
@@ -148,7 +145,7 @@ func _chill_shot_state() -> void:
 
 func _normal_shot_state() -> void:
 	if is_instance_valid(GlobalVars.boss):
-		auto_fire_rate = 0.5
+		auto_fire_rate = 0.3
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
@@ -161,7 +158,7 @@ func _normal_shot_state() -> void:
 
 func _hard_shot_state() -> void:
 	if is_instance_valid(GlobalVars.boss):
-		auto_fire_rate = 0.35
+		auto_fire_rate = 0.2
 		shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
@@ -173,29 +170,28 @@ func _hard_shot_state() -> void:
 		)
 
 # --- Movimiento automatico ---
-func _auto_move(state: int, delta: float) -> void:
-	update_auto_dir()
-	match state:
-		0: # Juega mas chill
-			_chill_movement_state(delta)
-		1:
-			_normal_movement_state(delta)
-		2:
-			_hard_movement_state(delta)
+func _auto_move(delta: float) -> void:
+	near_bullet = _get_near_bullet()
+	if not is_instance_valid(near_bullet) or self.global_position.distance_to(near_bullet.global_position) > 65.0:
+		velocity.x = 0.0
+	else:
+		update_auto_dir()
+		velocity.x = 7000 * delta * auto_dir
+		if global_position.distance_to(near_bullet.global_position) <= 25.0 and self.is_on_floor() and near_bullet.global_position.y < self.global_position.y:
+			velocity.y -= randi_range(20000, 40000) * delta
 
-func _chill_movement_state(delta: float) -> void:
-	velocity.x = 4500 * delta * auto_dir
-
-func _normal_movement_state(delta: float) -> void:
-	if GlobalVars.current_step % randi_range(60,100) and self.is_on_floor():
-		velocity.y -= 20000 * delta
-	velocity.x = 5500 * delta * auto_dir
-
-func _hard_movement_state(delta: float) -> void:
-	if GlobalVars.current_step % randi_range(50,60)  and self.is_on_floor():
-		velocity.y -= randi_range(20000, 40000) * delta
-	velocity.x = 7000 * delta * auto_dir
-
+func _get_near_bullet() -> Bullet:
+	if GlobalVars.bullets.is_empty(): return null
+	var n_bullet = null
+	
+	var min_dist = INF
+	for bullet in GlobalVars.bullets:
+		if bullet.from_group == "Boss":
+			var d = global_position.distance_to(bullet.global_position)
+			if d < min_dist:
+				min_dist = d
+				n_bullet = bullet
+	return n_bullet
 # ------------------
 # --- Colisiones ---
 # ------------------
