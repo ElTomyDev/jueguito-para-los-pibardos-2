@@ -177,7 +177,7 @@ func _auto_move(delta: float) -> void:
 	else:
 		update_auto_dir()
 		velocity.x = 7000 * delta * auto_dir
-		if global_position.distance_to(near_bullet.global_position) <= 25.0 and self.is_on_floor() and near_bullet.global_position.y < self.global_position.y:
+		if global_position.distance_to(near_bullet.global_position) <= 25.0 and self.is_on_floor() and near_bullet.global_position.y > self.global_position.y:
 			velocity.y -= randi_range(20000, 40000) * delta
 
 func _get_near_bullet() -> Bullet:

@@ -28,14 +28,21 @@ const R_ACTIVE_DODGE_MAX    : float = -20.0  # máx por bala por frame (evita ex
 const R_PASSIVE_DODGE       : float = 0.5   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_SHOT_GOOD_AIM      : float = 35.0
-const R_SHOT_HIT_PLAYER    : float = 45.5
-const R_DAMAGE_DEALT_MAX   : float = 95.0
-const R_GOOD_AIM           : float = 0.8
+const R_SHOT_GOOD_AIM        : float = 35.0
+const R_SHOT_HIT_PLAYER      : float = 45.5
+const R_DAMAGE_DEALT_MAX     : float = 95.0
+const R_GOOD_AIM             : float = 0.8
+const R_SHOT_AND_NEAR_PLAYER : float = 0.3
 
-# --- Inactividad ---
-const R_IDLE_PENALTY       : float = -0.15
-const IDLE_STREAK_THRESHOLD: int   = 20
+# --- Inactividad y movimiento ---
+const R_IDLE_PENALTY        : float = -0.15
+const IDLE_STREAK_THRESHOLD : int   = 20
+const R_NEAR_WALLS          : float = -0.2
+const R_STATIC              : float = -0.1
+
+# --- Umbrales y margenes ---
+const WALL_MARGIN      : float = 80.0
+const MIN_VEL_TRESHOLD : float = 10.0
 
 # NN
 var nn_client: NNClient
@@ -157,13 +164,13 @@ func _calculate_reward() -> float:
 			reward += R_SHOT_HIT_PLAYER
 		last_shot_impact = GlobalVars.shot_impact
 	
-	# ── 2c. Daño infligido al jugador ────────────────────────────────────────
+	# ── 2c. PRECISIÓN: Daño infligido al jugador ────────────────────────────────────────
 	var damage_dealt = last_player_health - p.health
 	if damage_dealt > 0.0:
 		var dmg_ratio = clamp(damage_dealt / p.max_health, 0.0, 1.0)
 		reward += dmg_ratio * R_DAMAGE_DEALT_MAX
 	
-	# ── 2d. AIM DENSO: recompensa por frame cuando está en modo ataque ──────────
+	# ── 2d. PRECISIÓN:: recompensa por frame cuando está en modo ataque ──────────
 	if is_instance_valid(b.near_player) and b.current_action == 1:
 		var angle_to_player_dense = atan2(
 			p.global_position.y - b.global_position.y,
@@ -173,6 +180,12 @@ func _calculate_reward() -> float:
 		var aim_quality_dense = clamp(1.0 - (angle_diff_dense / (PI / 2.0)), 0.0, 1.0)
 		reward += aim_quality_dense * R_GOOD_AIM
 	
+	# ── 2e. PRECISIÓN:: recompensa por por acercarse al jugador en modo ataque ──────────
+	if b.current_action == 1 and is_instance_valid(b.near_player):
+		var dist = b.global_position.distance_to(b.near_player.global_position)
+		var proximity_bonus = clamp(1.0 - (dist / viewport_size.length()), 0.0, 1.0)
+		reward += proximity_bonus * R_SHOT_AND_NEAR_PLAYER  # pequeño, por frame
+	
 	# ── Penalización por inactividad prolongada ──────────────────────────────
 	if b.current_action == 0:
 		_idle_streak += 1
@@ -180,6 +193,20 @@ func _calculate_reward() -> float:
 			reward += R_IDLE_PENALTY * (_idle_streak - IDLE_STREAK_THRESHOLD)
 	else:
 		_idle_streak = 0
+	
+	# ── Penalización por estar cerca de las paredes ──────────────────────────────
+	var too_close_to_wall = (
+		b.global_position.x < WALL_MARGIN or
+		b.global_position.x > viewport_size.x - WALL_MARGIN or
+		b.global_position.y < WALL_MARGIN or
+		b.global_position.y > viewport_size.y - WALL_MARGIN
+	)
+	if too_close_to_wall:
+		reward += R_NEAR_WALLS
+	
+	# ── Penalización por quedarse quieto ──────────────────────────────
+	if b.velocity.length() < MIN_VEL_TRESHOLD:
+		reward += R_STATIC
 	
 	# ── Actualizar tracking ──────────────────────────────────────────────────
 	last_player_health = p.health
