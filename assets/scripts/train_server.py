@@ -439,8 +439,19 @@ class GodotRLServer:
         reward = msg.get('reward', 0.0)
         self.episode_reward += reward
         
+        action, log_p, val, ah, ch = self.agent.get_action(inputs)
+        
         if self.current_state is None:
-            action, log_p, val, ah, ch = self.agent.get_action(inputs)
+            self.agent.store_transition(
+                state=self.current_state,
+                action=self.current_action,
+                reward=reward,
+                done=False,
+                log_prob=self.current_log_prob,
+                value=self.current_value,
+                ah=self.current_ah,
+                ch=self.current_ch
+            )
             self.current_state = inputs
             self.current_log_prob = log_p
             self.current_value = val
