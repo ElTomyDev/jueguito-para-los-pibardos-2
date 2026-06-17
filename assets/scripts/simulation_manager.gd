@@ -20,25 +20,25 @@ const TERM_LOSE            : float = -100.0
 const TERM_TIMEOUT_PEN     : float = -30.0
 
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -120.0
+const R_DAMAGE_TAKEN_MAX   : float = -150.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = 10.0  # máx por bala por frame (evita explotar)
+const R_ACTIVE_DODGE_GAIN   : float = 0.0   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_MAX    : float = 0.0  # máx por bala por frame (evita explotar)
 const R_PASSIVE_DODGE       : float = 1.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
 const R_SHOT_GOOD_AIM        : float = 45.0
 const R_SHOT_HIT_PLAYER      : float = 50.5
-const R_DAMAGE_DEALT_MAX     : float = 95.0
+const R_DAMAGE_DEALT_MAX     : float = 120.0
 const R_GOOD_AIM             : float = 1.0
-const R_SHOT_AND_NEAR_PLAYER : float = 0.3
+const R_SHOT_AND_NEAR_PLAYER : float = 0.2
 
 # --- Inactividad y movimiento ---
 const R_IDLE_PENALTY        : float = -0.15
 const IDLE_STREAK_THRESHOLD : int   = 20
-const R_NEAR_WALLS          : float = -0.2
-const R_STATIC              : float = -0.1
+const R_NEAR_WALLS          : float = -0.8
+const R_STATIC              : float = -0.2
 
 # --- Umbrales y margenes ---
 const WALL_MARGIN      : float = 120.0
@@ -373,10 +373,10 @@ func _save_train_data() -> void:
 		'episode':        GlobalVars.current_episode,
 		'best_avg_reward':  GlobalVars.best_avg_reward,
 		'best_avg_episode': GlobalVars.best_avg_episode,
-		'episodes_rewards': GlobalVars.episode_rewards,
-		'best_episode_rewards': GlobalVars.best_episode_rewards,
 		'player_wins': GlobalVars.player_wins,
 		'boss_wins': GlobalVars.boss_wins,
-		'timeouts': GlobalVars.timeouts
+		'timeouts': GlobalVars.timeouts,
+		'episodes_rewards': GlobalVars.episode_rewards,
+		'best_episode_rewards': GlobalVars.best_episode_rewards
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)

@@ -68,32 +68,58 @@ class RunningMeanStd:
 class ActorCritic(nn.Module):
     def __init__(self, input_dim, hidden_size, discrete_actions) -> None:
         super().__init__()
-        self.discrete_actions = discrete_actions
-        self.shared = nn.Sequential(
-            nn.Linear(input_dim, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh()
-        )
+        self.hidden_size = hidden_size
+        
+        # --- ACTOR ---
+        self.actor_fc = nn.Linear(input_dim, hidden_size)
+        self.actor_lstm = nn.LSTM(hidden_size, hidden_size, batch_first=True)
+        
         self.move_x_mean = nn.Linear(hidden_size, 1)
         self.move_y_mean = nn.Linear(hidden_size, 1)
         self.angle_mean = nn.Linear(hidden_size, 1)
-        self.log_std_move = nn.Parameter(torch.full((2,), -0.5))   # std para move_x y move_y
+        self.log_std_move = nn.Parameter(torch.full((2,), -0.5))
         self.log_std_angle = nn.Parameter(torch.full((1,), -0.7))
         self.discrete_logits = nn.Linear(hidden_size, discrete_actions)
-        self.critic = nn.Linear(hidden_size, 1)
+        
+        # --- CRÍTICO ---
+        self.critic_fc = nn.Linear(input_dim, hidden_size)
+        self.critic_lstm = nn.LSTM(hidden_size, hidden_size, batch_first=True)
+        self.critic_head = nn.Linear(hidden_size, 1)
+    
+    def get_initial_states(self, batch_size=1) -> tuple:
+        """Retorna los estados iniciales h0, c0 para el Actor y el Crítico"""
+        ah0 = torch.zeros(1, batch_size, self.hidden_size).to(device)
+        ac0 = torch.zeros(1, batch_size, self.hidden_size).to(device)
+        ch0 = torch.zeros(1, batch_size, self.hidden_size).to(device)
+        cc0 = torch.zeros(1, batch_size, self.hidden_size).to(device)
+        return (ah0, ac0), (ch0, cc0)
 
-    def forward(self, x) -> tuple:
-        shared_out = self.shared(x)
-        move_x_mean = self.move_x_mean(shared_out).squeeze(-1)
-        move_y_mean = self.move_y_mean(shared_out).squeeze(-1)
-        angle_mean = self.angle_mean(shared_out).squeeze(-1)
-        discrete_logits = self.discrete_logits(shared_out)
-        value = self.critic(shared_out).squeeze(-1)
-        return move_x_mean, move_y_mean, angle_mean, discrete_logits, value
+    def forward(self, x, actor_hidden, critic_hidden) -> tuple:
+        # Flujo del Actor
+        a_feat = F.relu(self.actor_fc(x))
+        a_out, (nah, nac) = self.actor_lstm(a_feat, actor_hidden)
+        a_out_sq = a_out.squeeze(1) # Eliminamos seq_len (que será 1 en este enfoque)
+        
+        mx = self.move_x_mean(a_out_sq).squeeze(-1)
+        my = self.move_y_mean(a_out_sq).squeeze(-1)
+        a_mean = self.angle_mean(a_out_sq).squeeze(-1)
+        d_logits = self.discrete_logits(a_out_sq)
+        
+        # Flujo del Crítico
+        c_feat = F.relu(self.critic_fc(x))
+        c_out, (nch, ncc) = self.critic_lstm(c_feat, critic_hidden)
+        c_out_sq = c_out.squeeze(1)
+        
+        value = self.critic_head(c_out_sq).squeeze(-1)
 
-    def get_action_and_logprob(self, state, deterministic=False) -> tuple:
-        mx, my, a_mean, d_logits, val = self.forward(state)
+        return mx, my, a_mean, d_logits, value, (nah, nac), (nch, ncc)
+
+    def get_action_and_logprob(self, state, actor_hidden, critic_hidden, deterministic=False) -> tuple:
+        # Añadir dimensión de secuencia: (1, input_dim) -> (1, 1, input_dim)
+        state_seq = state.unsqueeze(1)
+        
+        mx, my, a_mean, d_logits, val, new_ah, new_ch = self.forward(state_seq, actor_hidden, critic_hidden)
+        
         move_std = torch.exp(self.log_std_move)
         angle_std = torch.exp(self.log_std_angle)
 
@@ -107,41 +133,29 @@ class ActorCritic(nn.Module):
             action_idx = torch.argmax(d_logits, dim=-1)
             log_prob = None
         else:
-            move_xy = move_dist.rsample()          # (batch, 2)
-            angle = angle_dist.rsample()           # (batch,)
-            action_idx = discrete_dist.sample()    # (batch,)
+            move_xy = move_dist.rsample()          
+            angle = angle_dist.rsample()           
+            action_idx = discrete_dist.sample()    
             log_prob_move = move_dist.log_prob(move_xy).sum(dim=-1)
             log_prob_angle = angle_dist.log_prob(angle)
             log_prob_discrete = discrete_dist.log_prob(action_idx)
             log_prob = log_prob_move + log_prob_angle + log_prob_discrete
 
-        # Normalizar salidas continuas a rangos válidos
-        move_xy = torch.tanh(move_xy) # [-1, 1]
-        angle = torch.tanh(angle)     # [-π, π]
+        move_xy = torch.tanh(move_xy) 
+        angle = torch.tanh(angle)     
         
-        # Extraer valores escalares (para batch=1)
-        if move_xy.dim() == 2 and move_xy.shape[0] == 1:
-            move_x = move_xy[0, 0].item()
-            move_y = move_xy[0, 1].item()
-            angle_val = angle[0].item()
-            action_val = action_idx[0].item()
-        else:
-            # Caso batch > 1 (no se usa en step, pero por si acaso)
-            move_x = move_xy[:, 0].tolist()
-            move_y = move_xy[:, 1].tolist()
-            angle_val = angle.tolist()
-            action_val = action_idx.tolist()
-
         action_dict = {
-            'move_x': move_x,
-            'move_y': move_y,
-            'shot_angle': angle_val,
-            'action': action_val
+            'move_x': move_xy[0, 0].item(),
+            'move_y': move_xy[0, 1].item(),
+            'shot_angle': angle[0].item(),
+            'action': action_idx[0].item()
         }
-        return action_dict, log_prob, val
+        return action_dict, log_prob, val, new_ah, new_ch
 
-    def evaluate(self, states, actions) -> tuple:
-        mx, my, a_mean, d_logits, vals = self.forward(states)
+    def evaluate(self, states, actions, actor_hiddens, critic_hiddens) -> tuple:
+        # states shape: (batch, 1, input_dim)
+        mx, my, a_mean, d_logits, vals, _, _ = self.forward(states, actor_hiddens, critic_hiddens)
+        
         move_std = torch.exp(self.log_std_move)
         angle_std = torch.exp(self.log_std_angle)
         move_xy = torch.stack([actions['move_x'], actions['move_y']], dim=-1)
@@ -171,19 +185,25 @@ class RolloutBuffer:
 
     def clear(self) -> None:
         self.states = []
-        self.actions = []   # lista de dicts con move_x, move_y, shot_angle, action
+        self.actions = []
         self.rewards = []
         self.dones = []
         self.log_probs = []
         self.values = []
+        
+        self.actor_hidden = []
+        self.critic_hidden = []
 
-    def add(self, state, action, reward, done, log_prob, value) -> None:
+    def add(self, state, action, reward, done, log_prob, value, ah, ch) -> None:
         self.states.append(state)
         self.actions.append(action)
         self.rewards.append(reward)
         self.dones.append(done)
         self.log_probs.append(log_prob)
         self.values.append(value)
+        
+        self.actor_hidden.append((ah[0].detach(), ah[1].detach()))
+        self.critic_hidden.append((ch[0].detach(), ch[1].detach()))
 
     def ready(self) -> bool:
         return len(self.states) >= self.buffer_size
@@ -210,12 +230,15 @@ class RolloutBuffer:
         return advantages, returns
 
     def get_training_batches(self, advantages, returns, batch_size) -> any:
+        # Mezcla aleatoria de pasos, permitida porque proporcionamos el hidden state exacto 
+        # en el que se encontraba el agente en cada paso (Truncated BPTT con seq_len=1)
         indices = np.random.permutation(len(self.states))
         for start in range(0, len(self.states), batch_size):
             end = start + batch_size
             batch_idx = indices[start:end]
 
-            states_batch = torch.FloatTensor(np.array(self.states)[batch_idx]).to(device)
+            # Reconstruir batch añadiendo la dimensión de secuencia (batch, 1, input)
+            states_batch = torch.FloatTensor(np.array(self.states)[batch_idx]).unsqueeze(1).to(device)
             actions_batch = {
                 'move_x': torch.FloatTensor([self.actions[i]['move_x'] for i in batch_idx]).to(device),
                 'move_y': torch.FloatTensor([self.actions[i]['move_y'] for i in batch_idx]).to(device),
@@ -225,8 +248,13 @@ class RolloutBuffer:
             log_probs_old = torch.FloatTensor(np.array(self.log_probs)[batch_idx]).to(device)
             adv_batch = torch.FloatTensor(advantages[batch_idx]).to(device)
             ret_batch = torch.FloatTensor(returns[batch_idx]).to(device)
+            
+            ah0_batch = torch.cat([self.actor_hidden[i][0] for i in batch_idx], dim=1)
+            ac0_batch = torch.cat([self.actor_hidden[i][1] for i in batch_idx], dim=1)
+            ch0_batch = torch.cat([self.critic_hidden[i][0] for i in batch_idx], dim=1)
+            cc0_batch = torch.cat([self.critic_hidden[i][1] for i in batch_idx], dim=1)
 
-            yield states_batch, actions_batch, log_probs_old, adv_batch, ret_batch
+            yield states_batch, actions_batch, log_probs_old, adv_batch, ret_batch, (ah0_batch, ac0_batch), (ch0_batch, cc0_batch)
 
 # ------------------------------
 # Agente PPO
@@ -242,30 +270,48 @@ class PPOAgent:
         self.recent_rewards = []
         self.obs_rms = RunningMeanStd(shape=(INPUT_DIM,))
         self.reward_scale = 0.05   # divide la recompensa entre 10
+        
+        self.actor_h, self.critic_h = self.network.get_initial_states()
+        
         if config['model_load_path']:
             try:
                 self.load_model(config['model_load_path'])
                 print(f"Modelo cargado desde {config['model_load_path']}")
             except FileNotFoundError:
                 print("No se encontró modelo previo, empezando desde cero.")
-
+    
+    def reset_hidden_states(self) -> None:
+        """Limpia la memoria del LSTM al inicio de un nuevo episodio."""
+        self.actor_h, self.critic_h = self.network.get_initial_states()
+    
     def get_action(self, state, deterministic=False)  -> tuple:
         norm_state = (state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
         state_t = torch.FloatTensor(norm_state).unsqueeze(0).to(device)
+        
         with torch.no_grad():
-            action_dict, log_prob, value = self.network.get_action_and_logprob(state_t, deterministic)
+            # Pasamos los hidden states actuales y capturamos los nuevos
+            action_dict, log_prob, value, new_ah, new_ch = self.network.get_action_and_logprob(
+                state_t, self.actor_h, self.critic_h, deterministic
+            )
+            
         log_prob_val = log_prob.item() if log_prob is not None else 0.0
         value_val = value.item()
-        return action_dict, log_prob_val, value_val
+        
+        # Guarda copias desconectadas de los states actuales antes de actualizarlos.
+        old_actor_h = (self.actor_h[0].clone(), self.actor_h[1].clone())
+        old_critic_h = (self.critic_h[0].clone(), self.critic_h[1].clone())
+        
+        # Actualiza la memoria del agente con lo que "pensó" en este paso
+        self.actor_h = new_ah
+        self.critic_h = new_ch
 
-    def store_transition(self, state, action, reward, done, log_prob, value) -> None:
-        # Normaliza state antes de almacenar
+        return action_dict, log_prob_val, value_val, old_actor_h, old_critic_h
+
+    def store_transition(self, state, action, reward, done, log_prob, value, ah, ch) -> None:
         norm_state = (state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
-        # Escalar reward
         scaled_reward = reward * self.reward_scale
-        self.buffer.add(norm_state, action, scaled_reward, done, log_prob, value)
+        self.buffer.add(norm_state, action, scaled_reward, done, log_prob, value, ah, ch)
         self.total_steps += 1
-        # Actualizar estadísticas con el estado original (para ir aprendiendo la media/var real)
         self.obs_rms.update(np.array([state]))
 
     def update(self, last_value=0.0) -> None:
@@ -273,16 +319,22 @@ class PPOAgent:
             return
         advantages, returns = self.buffer.compute_advantages_and_returns(last_value)
         for _ in range(self.config['epochs']):
-            for (states_batch, actions_batch, log_probs_old, adv_batch, ret_batch) in \
+            for (states_batch, actions_batch, log_probs_old, adv_batch, ret_batch, ah_batch, ch_batch) in \
                     self.buffer.get_training_batches(advantages, returns, self.config['batch_size']):
-                log_probs_new, values_new, entropy = self.network.evaluate(states_batch, actions_batch)
+                
+                log_probs_new, values_new, entropy = self.network.evaluate(
+                    states_batch, actions_batch, ah_batch, ch_batch
+                )
+                
                 ratio = torch.exp(log_probs_new - log_probs_old)
                 surr1 = ratio * adv_batch
                 surr2 = torch.clamp(ratio, 1 - self.config['clip_eps'], 1 + self.config['clip_eps']) * adv_batch
+                
                 actor_loss = -torch.min(surr1, surr2).mean()
                 value_loss = F.mse_loss(values_new, ret_batch)
                 entropy_loss = -self.config['entropy_coef'] * entropy
                 loss = actor_loss + self.config['value_coef'] * value_loss + entropy_loss
+                
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.network.parameters(), self.config['max_grad_norm'])
@@ -293,10 +345,15 @@ class PPOAgent:
         last_value = 0.0
         if last_state is not None:
             state_t = torch.FloatTensor(last_state).unsqueeze(0).to(device)
+            state_seq = state_t.unsqueeze(1)
             with torch.no_grad():
-                _, _, value = self.network.get_action_and_logprob(state_t)
+                _, _, _, _, value, _, _ = self.network.forward(state_seq, self.actor_h, self.critic_h)
                 last_value = value.item()
+                
         self.update(last_value)
+        
+        # Reiniciar memoria a corto plazo para el nuevo intento
+        self.reset_hidden_states()
         
         self.recent_rewards.append(total_ep_reward)
         if len(self.recent_rewards) > 20:
@@ -323,11 +380,15 @@ class PPOAgent:
 
     def load_model(self, path) -> None:
         chk = torch.load(path, map_location=device)
-        self.network.load_state_dict(chk['network_state_dict'])
+        try:
+            self.network.load_state_dict(chk['network_state_dict'])
+        except RuntimeError:
+            print("Arquitectura cambiada detectada. Se empezará desde cero para evitar conflictos de pesos.")
+            return
+            
         self.optimizer.load_state_dict(chk['optimizer_state_dict'])
         self.episode_count = chk.get('episode_count', 0)
         self.total_steps = chk.get('total_steps', 0)
-        # Cargar estadísticas de normalización si existen
         if 'obs_rms_mean' in chk:
             self.obs_rms.mean  = np.array(chk['obs_rms_mean'], dtype=np.float32)
             self.obs_rms.var   = np.array(chk['obs_rms_var'],  dtype=np.float32)
@@ -343,10 +404,13 @@ class GodotRLServer:
         self.sock.bind((host, port))
         self.sock.settimeout(0.1)
         self.running = True
+        
         self.current_state = None
         self.current_action = None
         self.current_log_prob = None
         self.current_value = None
+        self.current_ah = None
+        self.current_ch = None
         self.episode_reward = 0.0
 
     def run(self) -> None:
@@ -374,11 +438,14 @@ class GodotRLServer:
         inputs = msg.get('inputs', [0.0]*INPUT_DIM)
         reward = msg.get('reward', 0.0)
         self.episode_reward += reward
+        
         if self.current_state is None:
-            action, log_p, val = self.agent.get_action(inputs)
+            action, log_p, val, ah, ch = self.agent.get_action(inputs)
             self.current_state = inputs
             self.current_log_prob = log_p
             self.current_value = val
+            self.current_ah = ah
+            self.current_ch = ch
         else:
             self.agent.store_transition(
                 state=self.current_state,
@@ -386,12 +453,16 @@ class GodotRLServer:
                 reward=reward,
                 done=False,
                 log_prob=self.current_log_prob,
-                value=self.current_value
+                value=self.current_value,
+                ah=self.current_ah,
+                ch=self.current_ch
             )
-            action, log_p, val = self.agent.get_action(inputs)
+            action, log_p, val, ah, ch = self.agent.get_action(inputs)
             self.current_state = inputs
             self.current_log_prob = log_p
             self.current_value = val
+            self.current_ah = ah
+            self.current_ch = ch
 
         self.current_action = action
 
@@ -399,15 +470,15 @@ class GodotRLServer:
             'move_x': action['move_x'],
             'move_y': action['move_y'],
             'shot_angle': action['shot_angle'],
-            'action': action['action']
+            'action': action['action'],
+            'move_dir': [action['move_x'], action['move_y']]
         }
-        # También incluye 'move_dir' por compatibilidad con el código existente
-        response['move_dir'] = [action['move_x'], action['move_y']]
         self.sock.sendto(json.dumps(response).encode('utf-8'), addr)
 
     def handle_episode_end(self, msg, addr) -> None:
         final_reward = msg.get('reward', 0.0)
         self.episode_reward += final_reward
+        
         if self.current_state is not None:
             self.agent.store_transition(
                 state=self.current_state,
@@ -415,10 +486,15 @@ class GodotRLServer:
                 reward=final_reward,
                 done=True,
                 log_prob=self.current_log_prob,
-                value=self.current_value
+                value=self.current_value,
+                ah=self.current_ah,
+                ch=self.current_ch
             )
             self.current_state = None
             self.current_action = None
+            self.current_ah = None
+            self.current_ch = None
+        
         self.agent.end_episode(self.episode_reward, last_state=None)
         self.episode_reward = 0.0
         ack = {'type': 'episode_ready'}

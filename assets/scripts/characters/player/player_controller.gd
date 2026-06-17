@@ -144,7 +144,7 @@ func _auto_shot(state: int, delta: float) -> void:
 		auto_shot_timer = 0.0
 
 func _chill_shot_state() -> void:
-	if is_instance_valid(GlobalVars.boss):
+	if is_instance_valid(GlobalVars.boss) and randf() < 0.25:
 		auto_fire_rate = 0.5
 		shot_attack._shot(
 			Utils.view_to(
@@ -157,7 +157,7 @@ func _chill_shot_state() -> void:
 		)
 
 func _normal_shot_state() -> void:
-	if is_instance_valid(GlobalVars.boss):
+	if is_instance_valid(GlobalVars.boss) and randf() < 0.50:
 		auto_fire_rate = 0.3
 		shot_attack._shot(
 			Utils.view_to(
@@ -170,7 +170,7 @@ func _normal_shot_state() -> void:
 		)
 
 func _hard_shot_state() -> void:
-	if is_instance_valid(GlobalVars.boss):
+	if is_instance_valid(GlobalVars.boss) and randf() < 0.85:
 		auto_fire_rate = 0.2
 		shot_attack._shot(
 			Utils.view_to(
