@@ -241,8 +241,9 @@ func _calculate_final_reward() -> float:
 func _handle_episode_end() -> void:
 	is_resetting = true
 	
+	var timed_out: bool = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
 	var final_reward: float = _calculate_final_reward()
-	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward)
+	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out)
 	
 	# Guarda la mejor recompensa
 	if GlobalVars.current_reward > GlobalVars.best_avg_reward:

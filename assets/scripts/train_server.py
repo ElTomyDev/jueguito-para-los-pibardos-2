@@ -341,10 +341,11 @@ class PPOAgent:
                 self.optimizer.step()
         self.buffer.clear()
 
-    def end_episode(self, total_ep_reward:float, last_state=None) -> None:
+    def end_episode(self, total_ep_reward:float, last_state=None, timed_out: bool = False) -> None:
         last_value = 0.0
-        if last_state is not None:
-            state_t = torch.FloatTensor(last_state).unsqueeze(0).to(device)
+        if timed_out and last_state is not None:
+            norm_state = (np.array(last_state) - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
+            state_t = torch.FloatTensor(norm_state).unsqueeze(0).to(device)
             state_seq = state_t.unsqueeze(1)
             with torch.no_grad():
                 _, _, _, _, value, _, _ = self.network.forward(state_seq, self.actor_h, self.critic_h)
@@ -379,7 +380,7 @@ class PPOAgent:
         print(f"Modelo guardado en {path}")
 
     def load_model(self, path) -> None:
-        chk = torch.load(path, map_location=device)
+        chk = torch.load(path, map_location=device, weights_only=False)
         try:
             self.network.load_state_dict(chk['network_state_dict'])
         except RuntimeError:
@@ -439,9 +440,7 @@ class GodotRLServer:
         reward = msg.get('reward', 0.0)
         self.episode_reward += reward
         
-        action, log_p, val, ah, ch = self.agent.get_action(inputs)
-        
-        if self.current_state is None:
+        if self.current_state is not None:
             self.agent.store_transition(
                 state=self.current_state,
                 action=self.current_action,
@@ -452,30 +451,17 @@ class GodotRLServer:
                 ah=self.current_ah,
                 ch=self.current_ch
             )
-            self.current_state = inputs
-            self.current_log_prob = log_p
-            self.current_value = val
-            self.current_ah = ah
-            self.current_ch = ch
-        else:
-            self.agent.store_transition(
-                state=self.current_state,
-                action=self.current_action,
-                reward=reward,
-                done=False,
-                log_prob=self.current_log_prob,
-                value=self.current_value,
-                ah=self.current_ah,
-                ch=self.current_ch
-            )
-            action, log_p, val, ah, ch = self.agent.get_action(inputs)
-            self.current_state = inputs
-            self.current_log_prob = log_p
-            self.current_value = val
-            self.current_ah = ah
-            self.current_ch = ch
 
+        # Obtener acción para el estado actual
+        action, log_p, val, ah, ch = self.agent.get_action(inputs)
+
+        # Actualizar estado actual
+        self.current_state = inputs
         self.current_action = action
+        self.current_log_prob = log_p
+        self.current_value = val
+        self.current_ah = ah
+        self.current_ch = ch
 
         response = {
             'move_x': action['move_x'],
@@ -488,7 +474,11 @@ class GodotRLServer:
 
     def handle_episode_end(self, msg, addr) -> None:
         final_reward = msg.get('reward', 0.0)
+        timed_out = msg.get('timed_out', False)
         self.episode_reward += final_reward
+        
+        last_state_for_bootstrap = self.current_state
+
         
         if self.current_state is not None:
             self.agent.store_transition(
@@ -505,8 +495,10 @@ class GodotRLServer:
             self.current_action = None
             self.current_ah = None
             self.current_ch = None
+            self.current_log_prob = None
+            self.current_value = None
         
-        self.agent.end_episode(self.episode_reward, last_state=None)
+        self.agent.end_episode(self.episode_reward, last_state_for_bootstrap, timed_out)
         self.episode_reward = 0.0
         ack = {'type': 'episode_ready'}
         self.sock.sendto(json.dumps(ack).encode('utf-8'), addr)

@@ -66,12 +66,13 @@ func get_timeout_stats() -> Dictionary:
 		"pct": (100.0 * _timeout_count / _total_requests) if _total_requests > 0 else 0.0
 	}
 
-func notify_episode_end(episode: int, total_reward: float, final_reward: float) -> void:
+func notify_episode_end(episode: int, total_reward: float, final_reward: float, timed_out: bool) -> void:
 	var msg = JSON.stringify({
 		"type": "episode_end",
 		"episode": episode,
 		"total_reward": total_reward,
-		"reward": final_reward
+		"reward": final_reward,
+		"timed_out": timed_out
 	})
 	_socket.put_packet(msg.to_utf8_buffer())
 	var t = Time.get_ticks_msec()
