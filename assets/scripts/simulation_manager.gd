@@ -16,29 +16,30 @@ var viewport_size: Vector2
 # --- Terminales ---
 const TERM_WIN_BASE        : float = 100.0
 const TERM_WIN_TIME_BONUS  : float = 30.0
-const TERM_LOSE            : float = -100.0
+const TERM_LOSE            : float = -160.0
 const TERM_TIMEOUT_PEN     : float = -30.0
 
+const R_FOR_STEP: float = -0.01
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -150.0
+const R_DAMAGE_TAKEN_MAX   : float = -20.0
 const R_DODGE_DISTANCE_MIN : float = 60.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.0   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = 0.0  # máx por bala por frame (evita explotar)
-const R_PASSIVE_DODGE       : float = 1.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
+const R_ACTIVE_DODGE_GAIN   : float = 0.2   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_MAX    : float = 2.0  # máx por bala por frame (evita explotar)
+const R_PASSIVE_DODGE       : float = 0.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_SHOT_GOOD_AIM        : float = 45.0
-const R_SHOT_HIT_PLAYER      : float = 50.5
-const R_DAMAGE_DEALT_MAX     : float = 120.0
+const R_DAMAGE_DEALT_MAX     : float = 10.0
+const R_SHOT_GOOD_AIM        : float = 5.0
+const R_SHOT_HIT_PLAYER      : float = 5.5
 const R_GOOD_AIM             : float = 1.0
 const R_SHOT_AND_NEAR_PLAYER : float = 0.2
 
 # --- Inactividad y movimiento ---
 const R_IDLE_PENALTY        : float = -0.15
 const IDLE_STREAK_THRESHOLD : int   = 20
-const R_NEAR_WALLS          : float = -0.8
-const R_STATIC              : float = -0.2
+const R_NEAR_WALLS          : float = -1.2
+const R_STATIC              : float = -0.5
 
 # --- Umbrales y margenes ---
 const WALL_MARGIN      : float = 120.0
@@ -106,6 +107,8 @@ func _calculate_reward() -> float:
 	var b = GlobalVars.boss
 	var reward = 0.0
 	
+	# ── 0. PENALIZACION POR PASO ─────────────────────────────────────
+	reward += R_FOR_STEP
 	# ── 1. SUPERVIVENCIA: daño recibido ─────────────────────────────────────
 	var damage_taken = last_boss_health - b.health
 	if damage_taken > 0.0:
