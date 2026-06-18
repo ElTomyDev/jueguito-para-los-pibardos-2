@@ -75,8 +75,8 @@ func get_inputs() -> Array:
 	
 	return [
 		health / max_health,
-		self.is_on_floor(),
-		(GlobalVars.current_step - self.last_shot_step) / GlobalConst.MAX_STEP_FOR_EPISODE,
+		float(self.is_on_floor()),
+		clamp(float(GlobalVars.current_step - self.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
 		global_position.x / viewport_size.x,
 		global_position.y / viewport_size.y,
 	]

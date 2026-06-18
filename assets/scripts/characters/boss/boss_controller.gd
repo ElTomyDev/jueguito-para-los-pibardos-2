@@ -118,6 +118,7 @@ func get_inputs() -> Array:
 	var rel_vel          = Vector2.ZERO
 	var time_since_last: float
 	
+	
 	if is_instance_valid(near_player):
 		dist_to_player = clamp(
 			global_position.distance_to(near_player.global_position) / viewport_size.length(),
@@ -141,9 +142,18 @@ func get_inputs() -> Array:
 	var b_dist: Array = []
 	var b_pos:  Array = []
 	var b_vel:  Array = []
-
+	var b_dir_to_boss_y:  Array = []
+	var b_dir_to_boss_x:  Array = []
+	var b_approach: Array = []
 	for bullet in bullets_detected:
 		if is_instance_valid(bullet):
+			var b_to_boss_x = (global_position.x - bullet.global_position.x) / viewport_size.x
+			var b_to_boss_y = (global_position.y - bullet.global_position.y) / viewport_size.y
+			var to_boss_dir = Vector2(b_to_boss_x, b_to_boss_y).normalized()
+			var approach_vel = bullet.velocity.dot((global_position - bullet.global_position).normalized()) / bullet.speed
+			b_approach.append(clamp(approach_vel, -1.0, 1.0))
+			b_dir_to_boss_x.append(to_boss_dir.x)  # ya en [-1, 1]
+			b_dir_to_boss_y.append(to_boss_dir.y)
 			b_dist.append(clamp(global_position.distance_to(bullet.global_position) / viewport_size.length(), 0.0, 1.0))
 			b_pos.append(bullet.global_position.x / viewport_size.x)
 			b_pos.append(bullet.global_position.y / viewport_size.y)
@@ -173,8 +183,8 @@ func get_inputs() -> Array:
 		health / max_health,
 		dist_to_player,
 		angle_to_player_raw,  
-		rel_vel.x / max_speed,
-		rel_vel.y / max_speed,
+		clamp(rel_vel.x / max_speed, -1.0, 1.0),
+		clamp(rel_vel.y / max_speed, -1.0, 1.0),
 		player_vel.x,
 		player_vel.y,
 		dist_to_center,
@@ -188,7 +198,9 @@ func get_inputs() -> Array:
 	inputs.append_array(b_dist)
 	inputs.append_array(b_pos)
 	inputs.append_array(b_vel)
-
+	inputs.append_array(b_dir_to_boss_x)
+	inputs.append_array(b_dir_to_boss_y)
+	inputs.append_array(b_approach)
 	return inputs  # 35 floats
 
 func dead_if_can() -> void:
