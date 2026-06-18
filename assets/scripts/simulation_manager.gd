@@ -14,8 +14,8 @@ var viewport_size: Vector2
 # REWARDS — todo en la misma escala, acumulado equilibrado
 # -------------------------------------------------------
 # --- Terminales ---
-const TERM_WIN_BASE        : float = 8.0
-const TERM_WIN_TIME_BONUS  : float = 2.0
+const TERM_WIN_BASE        : float = 15.0
+const TERM_WIN_TIME_BONUS  : float = 5.0
 const TERM_LOSE            : float = -12.0
 const TERM_TIMEOUT_PEN     : float = -3.0
 
@@ -47,6 +47,9 @@ const MIN_VEL_TRESHOLD : float = 5.0
 
 # NN
 var nn_client: NNClient
+
+var _boss_win_rate_window: Array = []  # últimos N episodios
+const DIFFICULTY_WINDOW: int = 50
 
 # Historial para deltas de salud
 var last_boss_health  : float = 0.0
@@ -95,6 +98,17 @@ func _physics_process(_delta: float) -> void:
 	
 	if _can_episode_end():
 		_handle_episode_end()
+
+func _update_difficulty() -> void:
+	# Calcula win rate del boss en la ventana
+	var wins = _boss_win_rate_window.count(true)
+	var win_rate = float(wins) / float(_boss_win_rate_window.size())
+	
+	# Solo sube la dificultad si el boss gana más del 15%
+	if win_rate > 0.15:
+		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.05, 0.0, 1.0)
+	elif win_rate < 0.05:  # Si casi nunca gana, baja la dificultad
+		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.02, 0.0, 1.0)
 
 # -------------------------------------------------------
 # Rewards
@@ -274,7 +288,6 @@ func _get_inputs_for_nn() -> Array:
 	
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())
-		print(inputs)
 	else:# Crea 0.0 por la cantidad de inputs que devuelve SOLO el jugador
 		for _i in range(5): inputs.append(0.0)
 	

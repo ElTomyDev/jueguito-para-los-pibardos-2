@@ -23,7 +23,7 @@ DISCRETE_ACTIONS = 2
 HIDDEN_SIZE = 256
 SEQ_LEN = 16   # largo de cada chunk para TBPTT
 
-LR = 0.0001
+LR = 0.00005
 GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_EPS = 0.15
@@ -338,6 +338,11 @@ class PPOAgent:
 
         self.actor_h, self.critic_h = self.network.get_initial_states()
 
+        self.win_buffer = []  # buffer separado para episodios ganados
+        self.WIN_BUFFER_MAX = 5  # guarda los últimos N episodios ganados completos
+        self.WIN_REPLAY_RATIO = 0.3  # N% del batch viene de episodios ganados
+
+        
         if config.get('model_load_path'):
             try:
                 self.load_model(config['model_load_path'])
