@@ -100,7 +100,7 @@ func update_get_state() -> void:
 		if GlobalVars.current_episode % 10 == 0:
 			current_auto_state = randi_range(0, 2)
 	else:
-		var hard_prob = clamp(float(GlobalVars.current_episode) / 8000.0, 0.0, 1.0)
+		var hard_prob = GlobalVars.player_difficulty
 		var roll = randf()
 		if roll < hard_prob * 0.6:
 			current_auto_state = 2
@@ -190,8 +190,8 @@ func _auto_move(delta: float) -> void:
 	near_bullet = _get_near_bullet()
 	update_auto_dir()
 	if not is_instance_valid(near_bullet) or self.global_position.distance_to(near_bullet.global_position) > 65.0:
-		if self.global_position.distance_to(GlobalVars.boss.global_position) <= 450.0:
-			velocity.x = 7000 * delta * auto_dir
+		
+		velocity.x = 7000 * delta * auto_dir
 	else:
 		velocity.x = 7000 * delta * auto_dir
 		if global_position.distance_to(near_bullet.global_position) <= 30.0 and self.is_on_floor() and near_bullet.global_position.y > self.global_position.y - 10:

@@ -259,9 +259,19 @@ func _calculate_final_reward() -> float:
 func _handle_episode_end() -> void:
 	is_resetting = true
 	
+	var boss_win: bool = GlobalVars.players.is_empty() or \
+		(not GlobalVars.players.is_empty() and GlobalVars.players[0].health <= 0.0)
+	
+	# Actualizar ventana de win rate ANTES de calcular final reward
+	_boss_win_rate_window.append(boss_win)
+	if _boss_win_rate_window.size() > DIFFICULTY_WINDOW:
+		_boss_win_rate_window.pop_front()
+	if _boss_win_rate_window.size() >= DIFFICULTY_WINDOW:
+		_update_difficulty()
+	
 	var timed_out: bool = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
 	var final_reward: float = _calculate_final_reward()
-	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out)
+	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out, boss_win)
 	
 	# Guarda la mejor recompensa
 	if GlobalVars.current_reward > GlobalVars.best_avg_reward:
@@ -381,11 +391,12 @@ func _load_train_data() -> void:
 		GlobalVars.current_episode   = data.get('episode', 0)
 		GlobalVars.best_avg_reward   = data.get('best_avg_reward', -1e9)
 		GlobalVars.best_avg_episode  = data.get('best_avg_episode', 0)
-		GlobalVars.episode_rewards   = data.get('episodes_rewards', [])
-		GlobalVars.best_episode_rewards = data.get('best_episode_rewards', [])
 		GlobalVars.player_wins = data.get('player_wins', 0)
 		GlobalVars.boss_wins = data.get('boss_wins', 0)
 		GlobalVars.timeouts = data.get('timeouts', 0)
+		GlobalVars.player_difficulty = data.get('player_difficulty', 0.0)
+		GlobalVars.episode_rewards   = data.get('episodes_rewards', [])
+		GlobalVars.best_episode_rewards = data.get('best_episode_rewards', [])
 
 func _save_train_data() -> void:
 	var data: Dictionary = {
@@ -395,7 +406,8 @@ func _save_train_data() -> void:
 		'player_wins': GlobalVars.player_wins,
 		'boss_wins': GlobalVars.boss_wins,
 		'timeouts': GlobalVars.timeouts,
+		'player_difficulty':  GlobalVars.player_difficulty,
 		'episodes_rewards': GlobalVars.episode_rewards,
-		'best_episode_rewards': GlobalVars.best_episode_rewards
+		'best_episode_rewards': GlobalVars.best_episode_rewards,
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)

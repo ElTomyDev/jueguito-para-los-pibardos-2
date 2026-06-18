@@ -1,5 +1,5 @@
 [gd_resource type="Theme" format=3 uid="uid://bfkxyuwxfbngm"]
 
 [resource]
-Label/colors/font_color = Color(0.72, 0.25200003, 0.25200003, 1)
+Label/colors/font_color = Color(0.06576, 0.72, 0.043200005, 1)
 Label/font_sizes/font_size = 10

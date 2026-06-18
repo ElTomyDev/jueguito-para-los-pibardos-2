@@ -65,6 +65,22 @@ theme = ExtResource("2_36ew0")
 [node name="BossShotIntents" type="Label" parent="Control/TrainLabels"]
 layout_mode = 2
 
+[node name="BossWinLabel" type="Label" parent="Control/TrainLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="PlayerWinLabel" type="Label" parent="Control/TrainLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="TimeoutsLabel" type="Label" parent="Control/TrainLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
+[node name="PlayerDifficultyLabel" type="Label" parent="Control/TrainLabels"]
+layout_mode = 2
+theme = ExtResource("2_36ew0")
+
 [node name="NNLabels" type="VBoxContainer" parent="Control"]
 layout_mode = 0
 offset_left = 845.0
