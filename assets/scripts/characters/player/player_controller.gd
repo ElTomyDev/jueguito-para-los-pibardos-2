@@ -121,14 +121,14 @@ func update_auto_dir() -> void:
 	else:
 		if self.global_position.distance_to(GlobalVars.boss.global_position) > 450.0:
 			if GlobalVars.boss.global_position.x < self.global_position.x:
-				auto_dir = 1
-			if GlobalVars.boss.global_position.x > self.global_position.x:
 				auto_dir = -1
+			if GlobalVars.boss.global_position.x > self.global_position.x:
+				auto_dir = 1
 		elif self.global_position.distance_to(GlobalVars.boss.global_position) < 200.0:
 			if GlobalVars.boss.global_position.x < self.global_position.x:
-				auto_dir = -1
-			if GlobalVars.boss.global_position.x > self.global_position.x:
 				auto_dir = 1
+			if GlobalVars.boss.global_position.x > self.global_position.x:
+				auto_dir = -1
 		else:
 			auto_dir = 0
 

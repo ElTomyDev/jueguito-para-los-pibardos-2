@@ -22,7 +22,7 @@ DISCRETE_ACTIONS = 2
 HIDDEN_SIZE     = 256
 SEQ_LEN         = 16
 
-LR              = 0.0001
+LR              = 0.00005
 GAMMA           = 0.99
 GAE_LAMBDA      = 0.95
 CLIP_EPS        = 0.15
@@ -384,7 +384,7 @@ class WinBuffer:
         if len(self.episodes) > self.max_episodes:
             self.episodes.pop(0)
 
-    def get_flat(self):
+    def get_flat(self) -> tuple:
         """Devuelve todos los pasos de todos los episodios ganados aplanados."""
         if not self.episodes:
             return None, None, None, None, None, None
@@ -527,7 +527,7 @@ class PPOAgent:
             s_t   = torch.FloatTensor(norm).unsqueeze(0).to(device)
             s_seq = s_t.unsqueeze(1)
             with torch.no_grad():
-                _, _, _, _, value, _, _ = self.network.forward_actor(s_seq, self.actor_h)
+                mx, my, a_mean, d_logits, new_ah = self.network.forward_actor(s_seq, self.actor_h)
                 # El crítico no es recurrente, usamos s_t directamente
                 last_value = self.network.forward_critic(s_t).item()
 
@@ -538,7 +538,7 @@ class PPOAgent:
         if len(self.recent_rewards) > 20:
             self.recent_rewards.pop(0)
         avg = sum(self.recent_rewards) / len(self.recent_rewards)
-        win_str = " ★ BOSS GANÓ" if boss_won else ""
+        win_str = "BOSS GANÓ" if boss_won else ""
         print(f"Ep {self.episode_count:4d} | avg20: {avg:8.1f} | "
               f"steps: {self.total_steps:7d} | reward: {total_ep_reward:8.1f}{win_str}")
 
@@ -752,3 +752,7 @@ if __name__ == "__main__":
         server.stop()
         agent.save_model(config['model_save_path'])
         print("Servidor detenido.")
+    except Exception as e:
+        print(f"ERROR en servidor: {e}")
+        import traceback
+        traceback.print_exc()
