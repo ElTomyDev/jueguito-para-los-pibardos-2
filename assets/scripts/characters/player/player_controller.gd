@@ -100,9 +100,11 @@ func update_get_state() -> void:
 		if GlobalVars.current_episode % 10 == 0:
 			current_auto_state = randi_range(0, 2)
 	else:
-		if GlobalVars.current_episode > 1000:
+		var hard_prob = clamp(float(GlobalVars.current_episode) / 2000.0, 0.0, 1.0)
+		var roll = randf()
+		if roll < hard_prob * 0.6:
 			current_auto_state = 2
-		elif GlobalVars.current_episode > 500:
+		elif roll < hard_prob:
 			current_auto_state = 1
 		else:
 			current_auto_state = 0

@@ -193,7 +193,8 @@ func _calculate_reward() -> float:
 	if b.current_action == 0:
 		_idle_streak += 1
 		if _idle_streak > IDLE_STREAK_THRESHOLD:
-			reward += R_IDLE_PENALTY * (_idle_streak - IDLE_STREAK_THRESHOLD)
+			var idle_factor = clamp(float(_idle_streak - IDLE_STREAK_THRESHOLD) / 100.0, 0.0, 1.0)
+			reward += R_IDLE_PENALTY * idle_factor
 	else:
 		_idle_streak = 0
 	

@@ -21,16 +21,16 @@ PORT = 9999
 INPUT_DIM = 37                # Coincide con GlobalConst.INPUTS
 DISCRETE_ACTIONS = 2          # 0: nada, 1: ataque
 HIDDEN_SIZE = 256   
-LR = 0.00005
+LR = 0.0001
 GAMMA = 0.99
 GAE_LAMBDA = 0.95
 CLIP_EPS = 0.15
-ENTROPY_COEF = 0.1
+ENTROPY_COEF = 0.05
 VALUE_COEF = 0.5
 MAX_GRAD_NORM = 0.5
-EPOCHS = 10
+EPOCHS = 6
 BATCH_SIZE = 256
-BUFFER_SIZE = 8192
+BUFFER_SIZE = 16384
 MODEL_SAVE_PATH = "./assets/train_data/boss_brain.pth"
 MODEL_LOAD_PATH = "./assets/train_data/boss_brain.pth"   # None para empezar de cero
 
@@ -38,6 +38,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class RunningMeanStd:
     def __init__(self, shape=()) -> None:
+        self.reward_rms = RunningMeanStd(shape=())
         self.mean = np.zeros(shape, dtype=np.float32)
         self.var = np.ones(shape, dtype=np.float32)
         self.count = 1000.0
@@ -230,31 +231,51 @@ class RolloutBuffer:
         return advantages, returns
 
     def get_training_batches(self, advantages, returns, batch_size) -> any:
-        # Mezcla aleatoria de pasos, permitida porque proporcionamos el hidden state exacto 
-        # en el que se encontraba el agente en cada paso (Truncated BPTT con seq_len=1)
-        indices = np.random.permutation(len(self.states))
-        for start in range(0, len(self.states), batch_size):
-            end = start + batch_size
-            batch_idx = indices[start:end]
-
-            # Reconstruir batch añadiendo la dimensión de secuencia (batch, 1, input)
-            states_batch = torch.FloatTensor(np.array(self.states)[batch_idx]).unsqueeze(1).to(device)
-            actions_batch = {
-                'move_x': torch.FloatTensor([self.actions[i]['move_x'] for i in batch_idx]).to(device),
-                'move_y': torch.FloatTensor([self.actions[i]['move_y'] for i in batch_idx]).to(device),
-                'shot_angle': torch.FloatTensor([self.actions[i]['shot_angle'] for i in batch_idx]).to(device),
-                'action': torch.LongTensor([self.actions[i]['action'] for i in batch_idx]).to(device)
-            }
-            log_probs_old = torch.FloatTensor(np.array(self.log_probs)[batch_idx]).to(device)
-            adv_batch = torch.FloatTensor(advantages[batch_idx]).to(device)
-            ret_batch = torch.FloatTensor(returns[batch_idx]).to(device)
+        # Dividir el buffer en chunks de longitud fija
+        seq_len = 16  # largo de cada secuencia
+        n = len(self.states)
+        # Generar índices de inicio de cada chunk
+        starts = list(range(0, n - seq_len + 1, seq_len))
+        np.random.shuffle(starts)
+        
+        for i in range(0, len(starts), batch_size // seq_len):
+            batch_starts = starts[i : i + batch_size // seq_len]
+            if not batch_starts:
+                continue
             
-            ah0_batch = torch.cat([self.actor_hidden[i][0] for i in batch_idx], dim=1)
-            ac0_batch = torch.cat([self.actor_hidden[i][1] for i in batch_idx], dim=1)
-            ch0_batch = torch.cat([self.critic_hidden[i][0] for i in batch_idx], dim=1)
-            cc0_batch = torch.cat([self.critic_hidden[i][1] for i in batch_idx], dim=1)
-
-            yield states_batch, actions_batch, log_probs_old, adv_batch, ret_batch, (ah0_batch, ac0_batch), (ch0_batch, cc0_batch)
+            states_batch, actions_batch = [], {'move_x': [], 'move_y': [], 'shot_angle': [], 'action': []}
+            log_probs_list, adv_list, ret_list = [], [], []
+            ah0_list, ch0_list = [], []
+            
+            for s in batch_starts:
+                states_batch.append([self.states[s + t] for t in range(seq_len)])
+                for k in actions_batch:
+                    actions_batch[k].append([self.actions[s + t][k] for t in range(seq_len)])
+                log_probs_list.append([self.log_probs[s + t] for t in range(seq_len)])
+                adv_list.append([advantages[s + t] for t in range(seq_len)])
+                ret_list.append([returns[s + t] for t in range(seq_len)])
+                # Hidden state del inicio del chunk (correcto)
+                ah0_list.append(self.actor_hidden[s])
+                ch0_list.append(self.critic_hidden[s])
+            
+            # Tensores: (batch, seq_len, dim)
+            states_t = torch.FloatTensor(np.array(states_batch)).to(device)
+            ah0 = torch.cat([h[0] for h in ah0_list], dim=1)
+            ac0 = torch.cat([h[1] for h in ah0_list], dim=1)
+            ch0 = torch.cat([h[0] for h in ch0_list], dim=1)
+            cc0 = torch.cat([h[1] for h in ch0_list], dim=1)
+            
+            actions_t = {
+                'move_x':     torch.FloatTensor(np.array(actions_batch['move_x'])).to(device),
+                'move_y':     torch.FloatTensor(np.array(actions_batch['move_y'])).to(device),
+                'shot_angle': torch.FloatTensor(np.array(actions_batch['shot_angle'])).to(device),
+                'action':     torch.LongTensor(np.array(actions_batch['action'])).to(device),
+            }
+            log_probs_t = torch.FloatTensor(np.array(log_probs_list)).to(device)
+            adv_t = torch.FloatTensor(np.array(adv_list)).to(device)
+            ret_t = torch.FloatTensor(np.array(ret_list)).to(device)
+            
+            yield states_t, actions_t, log_probs_t, adv_t, ret_t, (ah0, ac0), (ch0, cc0)
 
 # ------------------------------
 # Agente PPO
@@ -309,10 +330,13 @@ class PPOAgent:
 
     def store_transition(self, state, action, reward, done, log_prob, value, ah, ch) -> None:
         norm_state = (state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + 1e-8)
-        scaled_reward = reward * self.reward_scale
-        self.buffer.add(norm_state, action, scaled_reward, done, log_prob, value, ah, ch)
+        self.reward_rms.update(np.array([[reward]]))
+        normalized_reward = reward / (np.sqrt(self.reward_rms.var + 1e-8))
+        normalized_reward = np.clip(normalized_reward, -10.0, 10.0)
+        self.buffer.add(norm_state, action, normalized_reward, done, log_prob, value, ah, ch)
         self.total_steps += 1
         self.obs_rms.update(np.array([state]))
+        
 
     def update(self, last_value=0.0) -> None:
         if len(self.buffer.states) == 0:
