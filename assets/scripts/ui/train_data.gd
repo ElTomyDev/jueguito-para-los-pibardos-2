@@ -75,7 +75,7 @@ func update_reward_graph() -> void:
 				reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
 		for i in GlobalVars.best_episode_rewards.size():
 			if i % graph_x_margin == 0:
-				best_reward_plot.add_point(Vector2(i, GlobalVars.episode_rewards[i]))
+				best_reward_plot.add_point(Vector2(i, GlobalVars.best_episode_rewards[i]))
 		_last_plotted_episode = GlobalVars.episode_rewards.size() - 1
 		return
 	
