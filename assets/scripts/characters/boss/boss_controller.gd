@@ -165,6 +165,9 @@ func get_inputs() -> Array:
 			b_pos.append(0.0)
 			b_vel.append(0.0)
 			b_vel.append(0.0)
+			b_dir_to_boss_x.append(0.0)
+			b_dir_to_boss_y.append(0.0)
+			b_approach.append(0.0)
 	
 	var mouse_pos: Vector2 = get_global_mouse_position()
 	dist_to_mouse = clamp(
@@ -201,7 +204,7 @@ func get_inputs() -> Array:
 	inputs.append_array(b_dir_to_boss_x)
 	inputs.append_array(b_dir_to_boss_y)
 	inputs.append_array(b_approach)
-	return inputs  # 35 floats
+	return inputs
 
 func dead_if_can() -> void:
 	if health <= 0:

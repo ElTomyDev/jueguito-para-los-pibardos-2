@@ -18,7 +18,7 @@ from torch.distributions import Normal, Categorical
 # ──────────────────────────────────────────
 HOST = "127.0.0.1"
 PORT = 9999
-INPUT_DIM = 37
+INPUT_DIM = 49
 DISCRETE_ACTIONS = 2
 HIDDEN_SIZE = 256
 SEQ_LEN = 16   # largo de cada chunk para TBPTT

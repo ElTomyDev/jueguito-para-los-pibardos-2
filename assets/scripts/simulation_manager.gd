@@ -274,6 +274,7 @@ func _get_inputs_for_nn() -> Array:
 	
 	if is_instance_valid(GlobalVars.boss.near_player):
 		inputs.append_array(GlobalVars.boss.near_player.get_inputs())
+		print(inputs)
 	else:# Crea 0.0 por la cantidad de inputs que devuelve SOLO el jugador
 		for _i in range(5): inputs.append(0.0)
 	
