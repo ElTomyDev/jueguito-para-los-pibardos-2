@@ -107,11 +107,10 @@ func _update_difficulty() -> void:
 	var win_rate = float(wins) / float(_boss_win_rate_window.size())
 	
 	# Solo sube la dificultad si el boss gana más del 15%
-	if win_rate > 0.15:
-		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.05, 0.0, 1.0)
-	elif win_rate < 0.05:  # Si casi nunca gana, baja la dificultad
-		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.02, 0.0, 1.0)
-
+	if win_rate > 0.03:   # era 0.15 — activa con solo 3% de victorias
+		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
+	elif win_rate < 0.01:
+		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
 # -------------------------------------------------------
 # Rewards
 # -------------------------------------------------------

@@ -22,27 +22,28 @@ DISCRETE_ACTIONS = 2
 HIDDEN_SIZE     = 256
 SEQ_LEN         = 16
 
-LR              = 0.00005
+LR              = 0.00002
 GAMMA           = 0.99
 GAE_LAMBDA      = 0.95
-CLIP_EPS        = 0.15
+CLIP_EPS        = 0.1
 ADAM_EPS        = 1e-5
 ENTROPY_COEF    = 0.05
 VALUE_COEF      = 0.5
 MAX_GRAD_NORM   = 0.5
-EPOCHS          = 6
+EPOCHS          = 4
 BATCH_SIZE      = 256
-BUFFER_SIZE     = 16384
+BUFFER_SIZE     = 24576
 
 REWARD_CLIP     = 10.0
 OBS_CLIP        = 10.0
 LOG_STD_MOVE_INIT  = -0.5
 LOG_STD_ANGLE_INIT = -0.7
 
-WIN_BUFFER_MAX    = 15    # episodios ganados a guardar
-WIN_REPLAY_RATIO  = 0.3  # N% del batch de episodios ganados
+WIN_BUFFER_MAX    = 10    # episodios ganados a guardar
+WIN_REPLAY_RATIO  = 0.15  # N% del batch de episodios ganados
 
 MODEL_SAVE_PATH = "./assets/train_data/boss_brain.pth"
+BEST_MODEL_SAVE_PATH = "./assets/train_data/best_boss_brain.pth"
 MODEL_LOAD_PATH = "./assets/train_data/boss_brain.pth"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -417,6 +418,7 @@ class PPOAgent:
         self.obs_rms    = RunningMeanStd(shape=(INPUT_DIM,))
         self.reward_rms = RunningMeanStd(shape=())
 
+        self.best_avg_so_far = -1e9
         self.episode_count  = 0
         self.total_steps    = 0
         self.recent_rewards = []
@@ -538,13 +540,21 @@ class PPOAgent:
         if len(self.recent_rewards) > 20:
             self.recent_rewards.pop(0)
         avg = sum(self.recent_rewards) / len(self.recent_rewards)
+        
+        if not hasattr(self, 'best_avg_so_far'):
+            self.best_avg_so_far = -1e9
+        
         win_str = "BOSS GANÓ" if boss_won else ""
         print(f"Ep {self.episode_count:4d} | avg20: {avg:8.1f} | "
               f"steps: {self.total_steps:7d} | reward: {total_ep_reward:8.1f}{win_str}")
 
         if self.episode_count % 10 == 0:
-            self.save_model(self.config['model_save_path'])
-
+            self.save_model(self.config['model_save_path'])  # checkpoint periódico
+    
+        if avg > self.best_avg_so_far:
+            self.best_avg_so_far = avg
+            self.save_model(self.config['best_boss_path'])
+            print(f"  → Nuevo mejor modelo guardado (avg20: {avg:.1f})")
         self.episode_count += 1
 
     def save_model(self, path) -> None:
@@ -553,6 +563,7 @@ class PPOAgent:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'episode_count':        self.episode_count,
             'total_steps':          self.total_steps,
+            'best_avg_so_far':      self.best_avg_so_far,
             'obs_rms_mean':         self.obs_rms.mean.tolist(),
             'obs_rms_var':          self.obs_rms.var.tolist(),
             'obs_rms_count':        float(self.obs_rms.count),
@@ -572,6 +583,7 @@ class PPOAgent:
         self.optimizer.load_state_dict(chk['optimizer_state_dict'])
         self.episode_count = chk.get('episode_count', 0)
         self.total_steps   = chk.get('total_steps',   0)
+        self.best_avg_so_far = chk.get('best_avg_so_far', -1e9)
         if 'obs_rms_mean' in chk:
             self.obs_rms.mean  = np.array(chk['obs_rms_mean'], dtype=np.float32)
             self.obs_rms.var   = np.array(chk['obs_rms_var'],  dtype=np.float32)
@@ -742,6 +754,8 @@ if __name__ == "__main__":
         'buffer_size':      BUFFER_SIZE,
         'model_save_path':  MODEL_SAVE_PATH,
         'model_load_path':  MODEL_LOAD_PATH,
+        'best_boss_path':   BEST_MODEL_SAVE_PATH
+        
     }
     agent  = PPOAgent(config)
     server = GodotRLServer(agent, HOST, PORT)
