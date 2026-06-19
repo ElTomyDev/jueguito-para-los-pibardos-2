@@ -22,7 +22,7 @@ const TERM_TIMEOUT_PEN     : float = -3.0
 const R_FOR_STEP: float = -0.01
 
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -8.0
+const R_DAMAGE_TAKEN_MAX   : float = -5.0
 const R_DODGE_DISTANCE_MIN : float = 30.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
 const R_ACTIVE_DODGE_GAIN   : float = 0.6   # por cada unidad de distancia que se aleja
@@ -30,15 +30,15 @@ const R_ACTIVE_DODGE_MAX    : float = 4.0  # máx por bala por frame (evita expl
 const R_PASSIVE_DODGE       : float = 0.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_DAMAGE_DEALT_MAX     : float = 4.0
+const R_DAMAGE_DEALT_MAX     : float = 6.0
 const R_SHOT_GOOD_AIM        : float = 5.0
 const R_SHOT_HIT_PLAYER      : float = 5.5
 const R_GOOD_AIM             : float = 1.0
 const R_SHOT_AND_NEAR_PLAYER : float = 0.2
 
 # --- Inactividad y movimiento ---
-const R_IDLE_PENALTY        : float = -0.15
-const IDLE_STREAK_THRESHOLD : int   = 20
+const R_IDLE_PENALTY        : float = -0.4
+const IDLE_STREAK_THRESHOLD : int   = 10
 const R_NEAR_WALLS          : float = -1.2
 const R_STATIC              : float = -0.5
 
@@ -106,10 +106,10 @@ func _update_difficulty() -> void:
 	var wins = _boss_win_rate_window.count(true)
 	var win_rate = float(wins) / float(_boss_win_rate_window.size())
 	
-	# Solo sube la dificultad si el boss gana más del 15%
-	if win_rate > 0.03:   # era 0.15 — activa con solo 3% de victorias
+	# Solo sube la dificultad si el boss gana más del N%
+	if win_rate > 0.25:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
-	elif win_rate < 0.01:
+	elif win_rate < 0.05:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
 # -------------------------------------------------------
 # Rewards

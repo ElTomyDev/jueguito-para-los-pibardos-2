@@ -27,12 +27,14 @@ GAMMA           = 0.99
 GAE_LAMBDA      = 0.95
 CLIP_EPS        = 0.1
 ADAM_EPS        = 1e-5
-ENTROPY_COEF    = 0.05
+ENTROPY_COEF_START = 0.05
+ENTROPY_COEF_END   = 0.005
+ENTROPY_DECAY_EPISODES = 1500 
 VALUE_COEF      = 0.5
 MAX_GRAD_NORM   = 0.5
 EPOCHS          = 4
 BATCH_SIZE      = 256
-BUFFER_SIZE     = 24576
+BUFFER_SIZE     = 16384
 
 REWARD_CLIP     = 10.0
 OBS_CLIP        = 10.0
@@ -417,7 +419,9 @@ class PPOAgent:
 
         self.obs_rms    = RunningMeanStd(shape=(INPUT_DIM,))
         self.reward_rms = RunningMeanStd(shape=())
-
+        
+        self.entropy_coef = config['entropy_coef_start']
+        
         self.best_avg_so_far = -1e9
         self.episode_count  = 0
         self.total_steps    = 0
@@ -465,8 +469,7 @@ class PPOAgent:
         self.buffer.add(norm_state, action, norm_reward, done, log_prob, value, ah)
         self.total_steps += 1
 
-    def update(self, last_value: float = 0.0, boss_won: bool = False,
-               episode_data: dict = None) -> None:
+    def update(self, last_value: float = 0.0, boss_won: bool = False, episode_data: dict = None) -> None:
         if len(self.buffer.states) < self.config['seq_len']:
             return
 
@@ -510,7 +513,7 @@ class PPOAgent:
 
                 actor_loss   = -torch.min(surr1, surr2).mean()
                 value_loss   = F.mse_loss(values_new, ret_flat)
-                entropy_loss = -self.config['entropy_coef'] * entropy
+                entropy_loss = -self.entropy_coef * entropy
                 loss         = actor_loss + self.config['value_coef'] * value_loss + entropy_loss
 
                 self.optimizer.zero_grad()
@@ -541,6 +544,8 @@ class PPOAgent:
             self.recent_rewards.pop(0)
         avg = sum(self.recent_rewards) / len(self.recent_rewards)
         
+        self._update_entropy_coef()
+        
         win_str = "BOSS GANÓ" if boss_won else ""
         print(f"Ep {self.episode_count:4d} | avg20: {avg:8.1f} | "
               f"steps: {self.total_steps:7d} | reward: {total_ep_reward:8.1f}{win_str}")
@@ -554,6 +559,10 @@ class PPOAgent:
             print(f"  → Nuevo mejor modelo guardado (avg20: {avg:.1f})")
         self.episode_count += 1
 
+    def _update_entropy_coef(self) -> None:
+        t = min(self.episode_count / self.config['entropy_decay_episodes'], 1.0)
+        self.entropy_coef = (self.config['entropy_coef_start'] * (1 - t) + self.config['entropy_coef_end'] * t)
+    
     def save_model(self, path) -> None:
         torch.save({
             'network_state_dict':   self.network.state_dict(),
@@ -734,25 +743,26 @@ class GodotRLServer:
 # ──────────────────────────────────────────
 if __name__ == "__main__":
     config = {
-        'input_dim':        INPUT_DIM,
-        'discrete_actions': DISCRETE_ACTIONS,
-        'hidden_size':      HIDDEN_SIZE,
-        'seq_len':          SEQ_LEN,
-        'lr':               LR,
-        'adam_eps':         ADAM_EPS,
-        'gamma':            GAMMA,
-        'gae_lambda':       GAE_LAMBDA,
-        'clip_eps':         CLIP_EPS,
-        'entropy_coef':     ENTROPY_COEF,
-        'value_coef':       VALUE_COEF,
-        'max_grad_norm':    MAX_GRAD_NORM,
-        'epochs':           EPOCHS,
-        'batch_size':       BATCH_SIZE,
-        'buffer_size':      BUFFER_SIZE,
-        'model_save_path':  MODEL_SAVE_PATH,
-        'model_load_path':  MODEL_LOAD_PATH,
-        'best_model_path':  BEST_MODEL_SAVE_PATH
-        
+        'input_dim':         INPUT_DIM,
+        'discrete_actions':  DISCRETE_ACTIONS,
+        'hidden_size':       HIDDEN_SIZE,
+        'seq_len':           SEQ_LEN,
+        'lr':                LR,
+        'adam_eps':          ADAM_EPS,
+        'gamma':             GAMMA,
+        'gae_lambda':        GAE_LAMBDA,
+        'clip_eps':          CLIP_EPS,
+        'value_coef':        VALUE_COEF,
+        'max_grad_norm':     MAX_GRAD_NORM,
+        'epochs':            EPOCHS,
+        'batch_size':        BATCH_SIZE,
+        'buffer_size':       BUFFER_SIZE,
+        'model_save_path':   MODEL_SAVE_PATH,
+        'model_load_path':   MODEL_LOAD_PATH,
+        'best_model_path':   BEST_MODEL_SAVE_PATH,
+        'entropy_coef_start':ENTROPY_COEF_START,
+        'entropy_coef_end':  ENTROPY_COEF_END,
+        'entropy_decay_episodes':ENTROPY_DECAY_EPISODES
     }
     agent  = PPOAgent(config)
     server = GodotRLServer(agent, HOST, PORT)

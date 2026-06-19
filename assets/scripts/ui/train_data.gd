@@ -56,7 +56,7 @@ func update_train_labels() -> void:
 	boss_win_label.text = "Boss Wins: %d" % [GlobalVars.boss_wins]
 	player_win_label.text = "Player Wins: %d" % [GlobalVars.player_wins]
 	timeouts_label.text = "Timeouts: %d" % [GlobalVars.timeouts]
-	player_difficulty_label.text = "Player difficulty: %.2f" % [GlobalVars.player_difficulty]
+	player_difficulty_label.text = "Player difficulty: %.4f" % [GlobalVars.player_difficulty]
 	if is_instance_valid(GlobalVars.players[0]): 
 		player_pos_label.text = "Player Position: (%d, %d)" % [GlobalVars.players[0].global_position.x, GlobalVars.players[0].global_position.y]
 	if is_instance_valid(GlobalVars.boss):
