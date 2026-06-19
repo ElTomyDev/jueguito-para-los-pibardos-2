@@ -20,12 +20,13 @@ const TERM_LOSE            : float = -12.0
 const TERM_TIMEOUT_PEN     : float = -3.0
 
 const R_FOR_STEP: float = -0.01
+
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -4.0
-const R_DODGE_DISTANCE_MIN : float = 60.0
+const R_DAMAGE_TAKEN_MAX   : float = -8.0
+const R_DODGE_DISTANCE_MIN : float = 30.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.2   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = 2.0  # máx por bala por frame (evita explotar)
+const R_ACTIVE_DODGE_GAIN   : float = 0.6   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_MAX    : float = 4.0  # máx por bala por frame (evita explotar)
 const R_PASSIVE_DODGE       : float = 0.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
@@ -66,6 +67,7 @@ var is_resetting: bool = false
 
 func _ready() -> void:
 	Engine.time_scale = 1.0
+	Engine.max_physics_steps_per_frame = 1
 	_load_train_data()
 	_init_nn_core()
 	_reset_episode()

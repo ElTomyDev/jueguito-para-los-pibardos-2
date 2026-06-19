@@ -39,7 +39,7 @@ OBS_CLIP        = 10.0
 LOG_STD_MOVE_INIT  = -0.5
 LOG_STD_ANGLE_INIT = -0.7
 
-WIN_BUFFER_MAX    = 5    # episodios ganados a guardar
+WIN_BUFFER_MAX    = 15    # episodios ganados a guardar
 WIN_REPLAY_RATIO  = 0.3  # N% del batch de episodios ganados
 
 MODEL_SAVE_PATH = "./assets/train_data/boss_brain.pth"

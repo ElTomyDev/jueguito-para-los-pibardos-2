@@ -37,7 +37,7 @@ func update(delta: float) -> void:
 func boss_shot(delta: float) -> void:
 	if (character is PlayerController) or not is_instance_valid(character):
 		return
-	fire_timer -= delta
+	fire_timer -= minf(delta, 0.1) 
 	if fire_timer <= 0:
 		if character.can_shot():  # solo dispara si la acción es "ataque"
 			_shot()
@@ -53,7 +53,7 @@ func players_shot(delta: float) -> void:
 		Utils.view_to(self.global_position, get_global_mouse_position(), rotation_speed, self)
 
 	if Input.is_action_pressed("shot"):
-		fire_timer -= delta
+		fire_timer -= minf(delta, 0.1) 
 
 	if fire_timer <= 0:
 		_shot()
