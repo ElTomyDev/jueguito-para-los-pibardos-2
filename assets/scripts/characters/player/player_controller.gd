@@ -189,7 +189,7 @@ func _auto_move(delta: float) -> void:
 	if not is_instance_valid(GlobalVars.boss): return
 	near_bullet = _get_near_bullet()
 	update_auto_dir()
-	if not is_instance_valid(near_bullet) or self.global_position.distance_to(near_bullet.global_position) > 65.0:
+	if not is_instance_valid(near_bullet) or self.global_position.distance_to(near_bullet.global_position) > 65.0 or randf() > GlobalVars.player_difficulty:
 		
 		velocity.x = 7000 * delta * auto_dir
 	else:
