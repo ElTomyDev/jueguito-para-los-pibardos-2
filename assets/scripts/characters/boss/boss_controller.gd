@@ -174,7 +174,7 @@ func get_inputs() -> Array:
 			global_position.distance_to(mouse_pos) / viewport_size.length(),
 			0.0, 1.0
 		)
-	# 15 inputs fijos del boss
+	
 	var inputs = [
 		global_position.x / viewport_size.x,
 		global_position.y / viewport_size.y,
@@ -197,7 +197,6 @@ func get_inputs() -> Array:
 		#mouse_pos.y / viewport_size.y,
 		#dist_to_mouse
 	]
-	# + 4 + 8 + 8 = 20 inputs de balas → total boss = 35
 	inputs.append_array(b_dist)
 	inputs.append_array(b_pos)
 	inputs.append_array(b_vel)
