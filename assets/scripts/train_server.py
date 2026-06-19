@@ -577,6 +577,7 @@ class PPOAgent:
             'reward_rms_mean':      self.reward_rms.mean.tolist(),
             'reward_rms_var':       self.reward_rms.var.tolist(),
             'reward_rms_count':     float(self.reward_rms.count),
+            'entropy_coef':         self.entropy_coef,
         }, path)
         print(f"Modelo guardado en {path}")
 
@@ -591,6 +592,7 @@ class PPOAgent:
         self.episode_count = chk.get('episode_count', 0)
         self.total_steps   = chk.get('total_steps',   0)
         self.best_avg_so_far = chk.get('best_avg_so_far', -1e9)
+        self.entropy_coef = chk.get('entropy_coef', config['entropy_coef_start'])
         if 'obs_rms_mean' in chk:
             self.obs_rms.mean  = np.array(chk['obs_rms_mean'], dtype=np.float32)
             self.obs_rms.var   = np.array(chk['obs_rms_var'],  dtype=np.float32)

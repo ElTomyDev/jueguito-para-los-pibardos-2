@@ -277,17 +277,7 @@ func _handle_episode_end() -> void:
 	var final_reward: float = _calculate_final_reward()
 	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out, boss_win)
 	
-	# Guarda la mejor recompensa
-	var best_avg = 0
-	reward_window_avg.append(GlobalVars.current_reward)
-	if reward_window_avg.size() > MAX_REWARD_WINDOW:
-		reward_window_avg.pop_front()
-	for r in reward_window_avg:
-		best_avg += r
-	best_avg = best_avg / MAX_REWARD_WINDOW
-	if GlobalVars.best_avg_reward < best_avg:
-		GlobalVars.best_avg_reward = best_avg
-		GlobalVars.best_avg_episode = GlobalVars.current_episode
+	_update_best_avg_reward()
 	_save_train_data()
 	
 	GlobalVars.current_episode += 1
@@ -422,3 +412,19 @@ func _save_train_data() -> void:
 		'best_episode_rewards': GlobalVars.best_episode_rewards,
 	}
 	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)
+
+func _update_best_avg_reward() -> void:
+	# Guarda la mejor recompensa
+	var best_avg: float = 0.0
+	
+	reward_window_avg.append(GlobalVars.current_reward)
+	if reward_window_avg.size() > MAX_REWARD_WINDOW:
+		reward_window_avg.pop_front()
+	
+	for r in reward_window_avg:
+		best_avg += r
+	best_avg = best_avg / float(reward_window_avg.size())
+	
+	if GlobalVars.best_avg_reward < best_avg:
+		GlobalVars.best_avg_reward = best_avg
+		GlobalVars.best_avg_episode = GlobalVars.current_episode
