@@ -548,6 +548,7 @@ class PPOAgent:
         
         win_str = "BOSS GANÓ" if boss_won else ""
         print(f"Ep {self.episode_count:4d} | avg20: {avg:8.1f} | "
+              f"ent: {self.entropy_coef:.4f} | "
               f"steps: {self.total_steps:7d} | reward: {total_ep_reward:8.1f}{win_str}")
 
         if self.episode_count % 10 == 0:

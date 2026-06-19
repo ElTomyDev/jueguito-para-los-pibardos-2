@@ -63,6 +63,9 @@ var _idle_streak           : int = 0       # pasos consecutivos en action=0
 # Tracking de balas del jugador para reward de esquive
 var _player_bullets_near_last_frame: Dictionary = {}  # bullet_id → distancia anterior
 
+const MAX_REWARD_WINDOW: int = 20
+var reward_window_avg: Array = []
+
 var is_resetting: bool = false
 
 func _ready() -> void:
@@ -275,8 +278,15 @@ func _handle_episode_end() -> void:
 	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out, boss_win)
 	
 	# Guarda la mejor recompensa
-	if GlobalVars.current_reward > GlobalVars.best_avg_reward:
-		GlobalVars.best_avg_reward = GlobalVars.current_reward
+	var best_avg = 0
+	reward_window_avg.append(GlobalVars.current_reward)
+	if reward_window_avg.size() > MAX_REWARD_WINDOW:
+		reward_window_avg.pop_front()
+	for r in reward_window_avg:
+		best_avg += r
+	best_avg = best_avg / MAX_REWARD_WINDOW
+	if GlobalVars.best_avg_reward < best_avg:
+		GlobalVars.best_avg_reward = best_avg
 		GlobalVars.best_avg_episode = GlobalVars.current_episode
 	_save_train_data()
 	
@@ -389,7 +399,7 @@ func _load_train_data() -> void:
 		if data.is_empty():
 			print("No hay datos para cargar: ", GlobalConst.BEST_TRAIN_DATA_PATH)
 			return
-		GlobalVars.current_episode   = data.get('episode', 0)
+		GlobalVars.current_episode   = data.get('episode', 0) if not load_best_model else data.get("best_avg_episode")
 		GlobalVars.best_avg_reward   = data.get('best_avg_reward', -1e9)
 		GlobalVars.best_avg_episode  = data.get('best_avg_episode', 0)
 		GlobalVars.player_wins = data.get('player_wins', 0)
