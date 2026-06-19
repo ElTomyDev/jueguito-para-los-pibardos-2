@@ -541,9 +541,6 @@ class PPOAgent:
             self.recent_rewards.pop(0)
         avg = sum(self.recent_rewards) / len(self.recent_rewards)
         
-        if not hasattr(self, 'best_avg_so_far'):
-            self.best_avg_so_far = -1e9
-        
         win_str = "BOSS GANÓ" if boss_won else ""
         print(f"Ep {self.episode_count:4d} | avg20: {avg:8.1f} | "
               f"steps: {self.total_steps:7d} | reward: {total_ep_reward:8.1f}{win_str}")
@@ -553,7 +550,7 @@ class PPOAgent:
     
         if avg > self.best_avg_so_far:
             self.best_avg_so_far = avg
-            self.save_model(self.config['best_boss_path'])
+            self.save_model(self.config['best_model_path'])
             print(f"  → Nuevo mejor modelo guardado (avg20: {avg:.1f})")
         self.episode_count += 1
 
@@ -754,7 +751,7 @@ if __name__ == "__main__":
         'buffer_size':      BUFFER_SIZE,
         'model_save_path':  MODEL_SAVE_PATH,
         'model_load_path':  MODEL_LOAD_PATH,
-        'best_boss_path':   BEST_MODEL_SAVE_PATH
+        'best_model_path':  BEST_MODEL_SAVE_PATH
         
     }
     agent  = PPOAgent(config)

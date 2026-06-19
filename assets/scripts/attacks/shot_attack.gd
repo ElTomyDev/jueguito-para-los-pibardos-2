@@ -54,10 +54,9 @@ func players_shot(delta: float) -> void:
 
 	if Input.is_action_pressed("shot"):
 		fire_timer -= minf(delta, 0.1) 
-
-	if fire_timer <= 0:
-		_shot()
-		fire_timer = fire_rate
+		if fire_timer <= 0:
+			_shot()
+			fire_timer = fire_rate
 
 func _shot(custom_dir: Vector2 = Vector2.ZERO) -> void:
 	var bullet_instance = bullet.instantiate()
