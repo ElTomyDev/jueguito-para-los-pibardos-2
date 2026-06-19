@@ -592,7 +592,7 @@ class PPOAgent:
         self.episode_count = chk.get('episode_count', 0)
         self.total_steps   = chk.get('total_steps',   0)
         self.best_avg_so_far = chk.get('best_avg_so_far', -1e9)
-        self.entropy_coef = chk.get('entropy_coef', config['entropy_coef_start'])
+        self.entropy_coef = chk.get('entropy_coef', self.config['entropy_coef_start'])
         if 'obs_rms_mean' in chk:
             self.obs_rms.mean  = np.array(chk['obs_rms_mean'], dtype=np.float32)
             self.obs_rms.var   = np.array(chk['obs_rms_var'],  dtype=np.float32)
