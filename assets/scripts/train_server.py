@@ -22,7 +22,7 @@ DISCRETE_ACTIONS = 2
 HIDDEN_SIZE     = 256
 SEQ_LEN         = 16
 
-LR              = 0.00002
+LR              = 0.00001
 GAMMA           = 0.99
 GAE_LAMBDA      = 0.95
 CLIP_EPS        = 0.1
@@ -41,12 +41,12 @@ OBS_CLIP        = 10.0
 LOG_STD_MOVE_INIT  = -0.5
 LOG_STD_ANGLE_INIT = -0.7
 
-WIN_BUFFER_MAX    = 10    # episodios ganados a guardar
-WIN_REPLAY_RATIO  = 0.15  # N% del batch de episodios ganados
+WIN_BUFFER_MAX    = 15    # episodios ganados a guardar
+WIN_REPLAY_RATIO  = 0.20  # N% del batch de episodios ganados
 
 MODEL_SAVE_PATH = "./assets/train_data/boss_brain.pth"
 BEST_MODEL_SAVE_PATH = "./assets/train_data/best_boss_brain.pth"
-MODEL_LOAD_PATH = "./assets/train_data/boss_brain.pth"
+MODEL_LOAD_PATH = "./assets/train_data/best_boss_brain.pth"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Usando device: {device}")
@@ -553,11 +553,12 @@ class PPOAgent:
 
         if self.episode_count % 10 == 0:
             self.save_model(self.config['model_save_path'])  # checkpoint periódico
-    
-        if avg > self.best_avg_so_far:
-            self.best_avg_so_far = avg
-            self.save_model(self.config['best_model_path'])
-            print(f"  → Nuevo mejor modelo guardado (avg20: {avg:.1f})")
+
+        if len(self.recent_rewards) == 20:
+            if avg > self.best_avg_so_far:
+                self.best_avg_so_far = avg
+                self.save_model(self.config['best_model_path'])
+                print(f"  → Nuevo mejor modelo guardado (avg20: {avg:.1f})")
         self.episode_count += 1
 
     def _update_entropy_coef(self) -> None:

@@ -6,7 +6,7 @@ var viewport_size: Vector2
 @export var boss               : PackedScene
 @export var player_spawn_point : Node2D
 @export var boss_spawn_point   : Node2D
-@export var random_spawns      : bool = true
+@export var random_spawns      : bool = false
 @export var load_best_model    : bool = false
 @export var is_new_train       : bool = false
 
@@ -14,7 +14,7 @@ var viewport_size: Vector2
 # REWARDS — todo en la misma escala, acumulado equilibrado
 # -------------------------------------------------------
 # --- Terminales ---
-const TERM_WIN_BASE        : float = 15.0
+const TERM_WIN_BASE        : float = 30.0
 const TERM_WIN_TIME_BONUS  : float = 5.0
 const TERM_LOSE            : float = -12.0
 const TERM_TIMEOUT_PEN     : float = -3.0
@@ -22,7 +22,7 @@ const TERM_TIMEOUT_PEN     : float = -3.0
 const R_FOR_STEP: float = -0.01
 
 # --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -5.0
+const R_DAMAGE_TAKEN_MAX   : float = -6.0
 const R_DODGE_DISTANCE_MIN : float = 30.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
 const R_ACTIVE_DODGE_GAIN   : float = 0.6   # por cada unidad de distancia que se aleja
@@ -30,20 +30,20 @@ const R_ACTIVE_DODGE_MAX    : float = 4.0  # máx por bala por frame (evita expl
 const R_PASSIVE_DODGE       : float = 0.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
 # --- Precisión ---
-const R_DAMAGE_DEALT_MAX     : float = 6.0
-const R_SHOT_GOOD_AIM        : float = 5.0
-const R_SHOT_HIT_PLAYER      : float = 5.5
+const R_DAMAGE_DEALT_MAX     : float = 8.0
+const R_SHOT_GOOD_AIM        : float = 6.5
+const R_SHOT_HIT_PLAYER      : float = 6.5
 const R_GOOD_AIM             : float = 1.0
 const R_SHOT_AND_NEAR_PLAYER : float = 0.2
 
 # --- Inactividad y movimiento ---
 const R_IDLE_PENALTY        : float = -0.4
 const IDLE_STREAK_THRESHOLD : int   = 10
-const R_NEAR_WALLS          : float = -1.2
+const R_NEAR_WALLS          : float = -1.0
 const R_STATIC              : float = -0.5
 
 # --- Umbrales y margenes ---
-const WALL_MARGIN      : float = 120.0
+const WALL_MARGIN      : float = 80.0
 const MIN_VEL_TRESHOLD : float = 5.0
 
 # NN
@@ -71,7 +71,8 @@ var is_resetting: bool = false
 func _ready() -> void:
 	Engine.time_scale = 1.0
 	Engine.max_physics_steps_per_frame = 1
-	_load_train_data()
+	var train_data_path = GlobalConst.BEST_TRAIN_DATA_PATH if load_best_model else GlobalConst.TRAIN_DATA_PATH
+	_load_train_data(train_data_path)
 	_init_nn_core()
 	_reset_episode()
 
@@ -278,7 +279,7 @@ func _handle_episode_end() -> void:
 	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out, boss_win)
 	
 	_update_best_avg_reward()
-	_save_train_data()
+	_save_train_data(GlobalConst.TRAIN_DATA_PATH)
 	
 	GlobalVars.current_episode += 1
 	GlobalVars.best_episode_rewards.append(GlobalVars.best_avg_reward)
@@ -383,13 +384,13 @@ func _can_episode_end() -> bool:
 		or GlobalVars.players[0].health <= 0.0
 	)
 
-func _load_train_data() -> void:
+func _load_train_data(path) -> void:
 	if not is_new_train:
-		var data = ExternalFileManager.read_json(GlobalConst.BEST_TRAIN_DATA_PATH)
+		var data = ExternalFileManager.read_json(path)
 		if data.is_empty():
-			print("No hay datos para cargar: ", GlobalConst.BEST_TRAIN_DATA_PATH)
+			print("No hay datos para cargar: ", path)
 			return
-		GlobalVars.current_episode   = data.get('episode', 0) if not load_best_model else data.get("best_avg_episode")
+		GlobalVars.current_episode   = data.get('episode', 0)
 		GlobalVars.best_avg_reward   = data.get('best_avg_reward', -1e9)
 		GlobalVars.best_avg_episode  = data.get('best_avg_episode', 0)
 		GlobalVars.player_wins = data.get('player_wins', 0)
@@ -399,7 +400,7 @@ func _load_train_data() -> void:
 		GlobalVars.episode_rewards   = data.get('episodes_rewards', [])
 		GlobalVars.best_episode_rewards = data.get('best_episode_rewards', [])
 
-func _save_train_data() -> void:
+func _save_train_data(path) -> void:
 	var data: Dictionary = {
 		'episode':        GlobalVars.current_episode,
 		'best_avg_reward':  GlobalVars.best_avg_reward,
@@ -411,7 +412,7 @@ func _save_train_data() -> void:
 		'episodes_rewards': GlobalVars.episode_rewards,
 		'best_episode_rewards': GlobalVars.best_episode_rewards,
 	}
-	ExternalFileManager.save_data(data, GlobalConst.BEST_TRAIN_DATA_PATH)
+	ExternalFileManager.save_data(data, path)
 
 func _update_best_avg_reward() -> void:
 	# Guarda la mejor recompensa
@@ -421,10 +422,12 @@ func _update_best_avg_reward() -> void:
 	if reward_window_avg.size() > MAX_REWARD_WINDOW:
 		reward_window_avg.pop_front()
 	
-	for r in reward_window_avg:
-		best_avg += r
-	best_avg = best_avg / float(reward_window_avg.size())
-	
-	if GlobalVars.best_avg_reward < best_avg:
-		GlobalVars.best_avg_reward = best_avg
-		GlobalVars.best_avg_episode = GlobalVars.current_episode
+	if reward_window_avg.size() == MAX_REWARD_WINDOW:
+		for r in reward_window_avg:
+			best_avg += r
+		best_avg = best_avg / float(reward_window_avg.size())
+		
+		if GlobalVars.best_avg_reward < best_avg:
+			GlobalVars.best_avg_reward = best_avg
+			GlobalVars.best_avg_episode = GlobalVars.current_episode
+			_save_train_data(GlobalConst.BEST_TRAIN_DATA_PATH)

@@ -7,7 +7,8 @@ const MAX_STEP_FOR_EPISODE: int = 5000
 const SAVE_MODEL_PATH: String = "res://assets/train_data/boss_brain.json"
 const SAVE_BEST_MODEL_PATH = "res://assets/train_data/boss_brain_best.json"
 
-const BEST_TRAIN_DATA_PATH= "res://assets/train_data/train_data.json"
+const TRAIN_DATA_PATH= "res://assets/train_data/train_data.json"
+const BEST_TRAIN_DATA_PATH= "res://assets/train_data/best_train_data.json"
 
 const REWARD_CSV_PATH= "res://assets/train_data/reward_data.csv"
 

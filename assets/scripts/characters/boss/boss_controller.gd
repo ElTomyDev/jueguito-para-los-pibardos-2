@@ -21,7 +21,7 @@ const HIT_HISTORY_SIZE = 5
 @export var max_phases: int = 2
 
 @export_category("Attack Config")
-@export var force_attack_mode: bool = false
+@export var force_attack_mode: bool = true
 @export var attack_forced: int = 1
 
 @export_category("Movement Parameters")
