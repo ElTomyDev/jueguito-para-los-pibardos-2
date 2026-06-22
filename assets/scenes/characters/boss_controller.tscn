@@ -46,6 +46,8 @@ script = ExtResource("5_5dy75")
 shape = SubResource("CircleShape2D_5dy75")
 
 [node name="BulletDetector" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 4
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="BulletDetector"]
 shape = SubResource("CircleShape2D_r5g44")

@@ -14,10 +14,10 @@ var viewport_size: Vector2
 # REWARDS — todo en la misma escala, acumulado equilibrado
 # -------------------------------------------------------
 # --- Terminales ---
-const TERM_WIN_BASE        : float = 30.0
-const TERM_WIN_TIME_BONUS  : float = 5.0
-const TERM_LOSE            : float = -12.0
-const TERM_TIMEOUT_PEN     : float = -3.0
+const TERM_WIN_BASE        : float = 300.0
+const TERM_WIN_TIME_BONUS  : float = 100.0
+const TERM_LOSE            : float = -80.0
+const TERM_TIMEOUT_PEN     : float = -10.0
 
 const R_FOR_STEP: float = -0.01
 
@@ -25,7 +25,7 @@ const R_FOR_STEP: float = -0.01
 const R_DAMAGE_TAKEN_MAX   : float = -6.0
 const R_DODGE_DISTANCE_MIN : float = 30.0
 const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.6   # por cada unidad de distancia que se aleja
+const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
 const R_ACTIVE_DODGE_MAX    : float = 4.0  # máx por bala por frame (evita explotar)
 const R_PASSIVE_DODGE       : float = 0.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
 
@@ -111,9 +111,9 @@ func _update_difficulty() -> void:
 	var win_rate = float(wins) / float(_boss_win_rate_window.size())
 	
 	# Solo sube la dificultad si el boss gana más del N%
-	if win_rate > 0.25:
+	if win_rate > 0.10:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
-	elif win_rate < 0.05:
+	elif win_rate < 0.02:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
 # -------------------------------------------------------
 # Rewards
