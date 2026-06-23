@@ -7,7 +7,7 @@ var viewport_size: Vector2
 @export var player_spawn_point : Node2D
 @export var boss_spawn_point   : Node2D
 @export var random_spawns      : bool = false
-@export var load_best_model    : bool = false
+@export var load_best_model    : bool = true
 @export var is_new_train       : bool = false
 
 # -------------------------------------------------------
@@ -111,9 +111,9 @@ func _update_difficulty() -> void:
 	var win_rate = float(wins) / float(_boss_win_rate_window.size())
 	
 	# Solo sube la dificultad si el boss gana más del N%
-	if win_rate > 0.10:
+	if win_rate > 0.19:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
-	elif win_rate < 0.02:
+	elif win_rate < 0.09:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
 # -------------------------------------------------------
 # Rewards
@@ -253,7 +253,7 @@ func _calculate_final_reward() -> float:
 		if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
 			player_dmg_ratio = 1.0 - (GlobalVars.players[0].health / GlobalVars.players[0].max_health)
 		GlobalVars.player_wins += 1
-		return TERM_LOSE + player_dmg_ratio * 40.0  # entre -100 y -60
+		return TERM_LOSE + player_dmg_ratio * 20.0  # entre -100 y -60
 	
 	var player_hp_ratio = 1.0
 	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
