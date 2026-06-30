@@ -1,10 +1,11 @@
-[gd_scene load_steps=9 format=3 uid="uid://do24pdmmrhm74"]
+[gd_scene load_steps=10 format=3 uid="uid://do24pdmmrhm74"]
 
 [ext_resource type="Script" uid="uid://bslnh33d3sn7i" path="res://assets/scripts/characters/boss/boss_controller.gd" id="1_agbej"]
 [ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="2_e77qu"]
 [ext_resource type="Script" uid="uid://y32pm2gjq5x3" path="res://assets/scripts/characters/boss/floating_movement.gd" id="3_n7ob0"]
 [ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/shot_attack.gd" id="4_5dy75"]
 [ext_resource type="Script" uid="uid://dv8tqb8qgxvle" path="res://assets/scripts/characters/damage_area.gd" id="5_5dy75"]
+[ext_resource type="Script" uid="uid://y1nrgsgvpqwu" path="res://assets/scripts/characters/boss/boss_collisions.gd" id="5_r5g44"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_n7ob0"]
 
@@ -34,8 +35,13 @@ script = ExtResource("3_n7ob0")
 [node name="ShotAttack" type="Node2D" parent="BossMechanics"]
 script = ExtResource("4_5dy75")
 bullet_color = Color(0.33453757, 0.7451511, 0.8599755, 1)
-bullet_dispersion = 1.0
+rotation_speed = 25.0
+bullet_dispersion = 0.08
+fire_rate = 0.45
 is_boss = true
+
+[node name="Collisions" type="Node2D" parent="BossMechanics"]
+script = ExtResource("5_r5g44")
 
 [node name="DamageArea" type="Area2D" parent="." groups=["Boss"]]
 collision_layer = 0
@@ -52,7 +58,6 @@ collision_mask = 4
 [node name="CollisionShape2D" type="CollisionShape2D" parent="BulletDetector"]
 shape = SubResource("CircleShape2D_r5g44")
 
-[connection signal="body_entered" from="DamageArea" to="." method="_on_damage_area_body_entered"]
-[connection signal="body_shape_entered" from="DamageArea" to="." method="_on_damage_area_body_shape_entered"]
-[connection signal="body_entered" from="BulletDetector" to="." method="_on_bullet_detector_body_entered"]
-[connection signal="body_exited" from="BulletDetector" to="." method="_on_bullet_detector_body_exited"]
+[connection signal="body_entered" from="DamageArea" to="BossMechanics/Collisions" method="_on_damage_area_body_entered"]
+[connection signal="body_entered" from="BulletDetector" to="BossMechanics/Collisions" method="_on_bullet_detector_body_entered"]
+[connection signal="body_exited" from="BulletDetector" to="BossMechanics/Collisions" method="_on_bullet_detector_body_exited"]

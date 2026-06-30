@@ -21,21 +21,21 @@ var character: CharacterBody2D = null
 
 var last_shot_step: int = 0
 
-# FIX: fire_timer arranca en fire_rate para evitar disparo inmediato en frame 1
 var fire_timer: float = 0.0
 var total_bullet_damage: float
 
 func setup(body: CharacterBody2D) -> void:
 	character = body
-	_init_boss_values()
 
 @warning_ignore("unused_parameter")
 func update(delta: float) -> void:
-	boss_shot(delta)
-	players_shot(delta)
+	if (character is BossController):
+		boss_shot(delta)
+	if (character is PlayerController):
+		players_shot(delta)
 
 func boss_shot(delta: float) -> void:
-	if (character is PlayerController) or not is_instance_valid(character):
+	if not (character is BossController) or not is_instance_valid(character):
 		return
 	fire_timer -= minf(delta, 0.1) 
 	if fire_timer <= 0:
@@ -46,8 +46,7 @@ func boss_shot(delta: float) -> void:
 		fire_timer = fire_rate  # resetea siempre, haya disparado o no
 
 func players_shot(delta: float) -> void:
-	if (character is BossController) or not is_instance_valid(character):
-		return
+	if not (character is PlayerController) or not is_instance_valid(character): return
 
 	if is_instance_valid(gun_sprite):
 		Utils.view_to(self.global_position, get_global_mouse_position(), rotation_speed, self)
@@ -85,16 +84,6 @@ func _set_bullet_values(bullet_instence: Bullet, custom_bullet_dir: Vector2) -> 
 	if character is BossController:
 		bullet_instence.player_dir = Vector2.ZERO
 		bullet_instence.boss_dir   = Vector2(cos(character.shot_angle), sin(character.shot_angle)) + Vector2(disp_x, disp_y)
-
-func _init_boss_values() -> void:
-	if !(character is BossController) or not is_instance_valid(character):
-		return
-	gun_damage        = 0.0
-	rotation_speed    = 25.0
-	fire_rate         = 0.45
-	fire_timer        = fire_rate
-	bullet_life_time  = 2.3
-	bullet_dispersion = 0.08
 
 func _get_total_bullet_damage() -> float:
 	return gun_damage if not character else gun_damage + character.damage

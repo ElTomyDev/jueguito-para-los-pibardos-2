@@ -17,22 +17,10 @@ var target:Area2D = null
 
 var hit_target: bool = false
 
-func _ready() -> void:
-	
-	if boss_dir != Vector2.ZERO:
-		# Bala del boss: usa la dirección que decidió la red
-		dir_to_mirror = boss_dir 
-	elif player_dir != Vector2.ZERO:
-		# Bala del jugador: apunta al mouse
-		dir_to_mirror = player_dir
-	GlobalVars.bullets.append(self) # Agrega la bala a las variables globales para usarlas en el simulation_manager.gd
-
-func _process(delta: float) -> void:
+func update(delta: float) -> void:
 	_dead_if_can(delta)
-	queue_redraw()
-
-func _physics_process(delta: float) -> void:
 	move_bullet(delta)
+	queue_redraw()
 	move_and_slide()
 
 @warning_ignore("unused_parameter")
@@ -41,28 +29,24 @@ func move_bullet(delta:float) -> void:
 
 func _dead_if_can(delta: float) -> void:
 	if life_time <= 0:
-		queue_free() 
-		var idx = GlobalVars.bullets.find(self)
-		if idx != -1:
-			GlobalVars.bullets.pop_at(idx)
+		queue_free()
 	life_time -= delta
 
 func _draw() -> void:
 	draw_line(Vector2.ZERO, Vector2(9,0), bullet_color, 4.0)
 
-func delete_bullet(player: PlayerController=null):
+# Aca hay que modificar shot_impact
+func delete_bullet(boss: BossController=null, player: PlayerController=null):
 	hit_target = true
 	if from_group == "Boss":
 		if not player:
-			GlobalVars.shot_impact = self.global_position
+			boss.shot_impact = self.global_position
 		else:
-			GlobalVars.shot_impact = player.global_position
-	var idx = GlobalVars.bullets.find(self)
-	if idx != -1:
-		GlobalVars.bullets.pop_at(idx)
+			boss.shot_impact = player.global_position
+	elif from_group == "Players":
+		if not boss:
+			player.shot_impact = self.global_position
+		else:
+			player.shot_impact = boss.global_position
 	queue_free()
 
-
-#func _on_visible_on_screen_enabler_2d_screen_exited() -> void:
-#	GlobalVars.bullets.pop_at(GlobalVars.bullets.find(self))
-#	queue_free()

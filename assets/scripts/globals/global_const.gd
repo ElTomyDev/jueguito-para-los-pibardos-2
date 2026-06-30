@@ -1,5 +1,11 @@
 extends Node
 
+var game_size: Vector2 = Vector2(
+	ProjectSettings.get_setting("display/window/size/viewport_height"),
+	ProjectSettings.get_setting("display/window/size/viewport_width")
+	)
+
+const OUTPUTS_NAMES: Array = ['move_dir', 'shot_angle', 'action']
 const INPUTS: int = 46
 
 const MAX_STEP_FOR_EPISODE: int = 5000

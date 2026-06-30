@@ -1,17 +1,16 @@
 extends CharacterBody2D
 class_name BossController
 
-signal boss_ready
-
-var viewport_size: Vector2 
-
 const MAX_BULLET_DETECTS: int = 3
-const HIT_HISTORY_SIZE = 5
 
+@onready var collisions: BossCollision = $BossMechanics/Collisions as BossCollision
 @onready var floating_movement: FloatingMovement = $BossMechanics/floating_movement as FloatingMovement
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
 @onready var shot_attack: ShotAttack = $BossMechanics/ShotAttack as ShotAttack
-@onready var bullet_detector: Area2D = $BulletDetector as Area2D
+
+@export_category("Boss Config")
+@export var force_action_mode: bool = true
+@export var action_forced: int = 1
 
 @export_category("Boss Stats")
 @export var max_health: float = 10000.0
@@ -20,21 +19,15 @@ const HIT_HISTORY_SIZE = 5
 @export var max_damage: float = 1000.0
 @export var max_phases: int = 2
 
-@export_category("Attack Config")
-@export var force_attack_mode: bool = true
-@export var attack_forced: int = 1
-
 @export_category("Movement Parameters")
 @export var max_speed: float = 500.0
 @export var acceleration_speed: float = 15.0 
 @export var deceleration_speed: float = 10.0
 
 var boss_actions: Dictionary = {
-	0: func(_d): _nothing_action(_d),
+	0: func(d): _move_action(d),
 	1: func(d): _ball_attack_action(d)
 }
-
-var hit_history: Array = []
 
 var current_action: int = 0
 var move_dir: Vector2 = Vector2.ZERO
@@ -47,28 +40,21 @@ var last_shot_step: int = -1
 
 var bullet_from_group: StringName = "Boss"
 var bullet_to_group: StringName = "Players"
+var shot_impact: Vector2 = Vector2.ZERO
 
-# bullets_detected: Array de tamaño fijo MAX_BULLET_DETECTS con nulls o Bullet
+#Array de tamaño fijo MAX_BULLET_DETECTS con nulls o Bullet
 var bullets_detected: Array = []
 
 var near_player: PlayerController = null
 var near_bullet: Bullet = null
 
-func _ready() -> void:
-	init_boss()
-
-@warning_ignore("unused_parameter")
-func _process(delta: float) -> void:
-	dead_if_can()
-
-func _physics_process(delta: float) -> void:
-	update_boss(delta)
-
-func init_boss() -> void:
+func init() -> BossController:
+	
 	health = max_health
 	damage = base_damage
-	viewport_size = get_viewport().get_visible_rect().size
-
+	
+	if collisions:
+		collisions.setup(self)
 	if floating_movement:
 		floating_movement.setup(self)
 	if shot_attack:
@@ -81,143 +67,67 @@ func init_boss() -> void:
 	for _i in range(MAX_BULLET_DETECTS):
 		bullets_detected.append(null)
 	
-	GlobalVars.boss = self
-	boss_ready.emit()
+	return self
 
-func update_boss(delta) -> void:
-	near_player = _get_near_player()
+# -----------------------
+# --- Actualizaciones ---
+# -----------------------
+func update(delta, nn_outputs:Dictionary={}, player:PlayerController=null) -> void:
+	_dead_if_can()
+	_update_bullets_detecteds()
+	near_bullet = _get_near_bullet()
+	near_player = player
 	
-	if GlobalVars.nn_outputs.has("move_dir"):
-		var raw_dir = GlobalVars.nn_outputs["move_dir"]
-		if typeof(raw_dir) == TYPE_ARRAY and raw_dir.size() >= 2:
-			move_dir = Vector2(raw_dir[0], raw_dir[1])
-	if GlobalVars.nn_outputs.has("action"):
-		current_action = int(GlobalVars.nn_outputs["action"]) if not force_attack_mode else attack_forced
-	if GlobalVars.nn_outputs.has("shot_angle") and is_instance_valid(near_player):
-		var offset_norm: float = GlobalVars.nn_outputs["shot_angle"]  # [-1, 1]
-		var max_deviation: float = PI / 2.0  # desvío máximo de 90°
-		var angle_to_player: float = (near_player.global_position - global_position).angle()
-		shot_angle = angle_to_player + offset_norm * max_deviation
-	elif GlobalVars.nn_outputs.has("shot_angle"):
-		# Fallback si no hay jugador: ángulo absoluto directo
-		shot_angle = GlobalVars.nn_outputs["shot_angle"] * PI
-	
-	update_bullets_norm_info()
+	# Actualiza los valores del jefe dependiendo de si es o no automatico.
+	if not nn_outputs.is_empty(): # Si la red decide
+		_update_values_by_nn(nn_outputs)
+	else: # Si no decide la red.
+		_update_values_by_auto()
 	
 	_update_action(delta)
 	move_and_slide()
 	
-	global_position.x = clamp(global_position.x, 0.0, viewport_size.x)
-	global_position.y = clamp(global_position.y, 0.0, viewport_size.y)
+	_clamp_global_positions()
 
-func get_inputs() -> Array:	
-	var dist_to_player  = 1.0
-	var dist_to_mouse: float = 1.0
-	var angle_to_player_raw: float = 0.0  # ángulo directo al jugador, normalizado
-	var player_vel       = Vector2.ZERO
-	var rel_vel          = Vector2.ZERO
-	var time_since_last: float
+# --- Para la red neuronal ---
+func _update_values_by_nn(nn_outputs: Dictionary) -> void:
+	if not nn_outputs.has_all(GlobalConst.OUTPUTS_NAMES):
+		push_error("boss_controller.gd | El diccionario otorgado no tiene las llaves esperadas.")
 	
+	var raw_dir = nn_outputs["move_dir"]
+	if typeof(raw_dir) != TYPE_ARRAY or raw_dir.size() < 2 or raw_dir.size() > 2:
+		push_error("boss_controller.gd | La lista 'move_dirs' debe ser un array y contener solo 2 elementos. ")
 	
-	if is_instance_valid(near_player):
-		dist_to_player = clamp(
-			global_position.distance_to(near_player.global_position) / viewport_size.length(),
-			0.0, 1.0
-		)
-		var to_player = (near_player.global_position - global_position).angle()
-		angle_to_player_raw = to_player / PI  # normalizado [-1, 1]
-		player_vel  = near_player.velocity.normalized()
-		rel_vel     = near_player.velocity - velocity
-	
-	var src_last_shot = shot_attack.last_shot_step if is_instance_valid(shot_attack) else -1
-	if src_last_shot <= 0:
-		time_since_last = 1.0
-	else:
-		time_since_last = clamp(
-			float(GlobalVars.current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
-			0.0, 1.0
-		)
-	
-	var dist_to_center = global_position.distance_to(viewport_size / 2) / viewport_size.length()
-	var b_dist: Array = []
-	var b_pos:  Array = []
-	var b_vel:  Array = []
-	var b_dir_to_boss_y:  Array = []
-	var b_dir_to_boss_x:  Array = []
-	var b_approach: Array = []
-	for bullet in bullets_detected:
-		if is_instance_valid(bullet):
-			var b_to_boss_x = (global_position.x - bullet.global_position.x) / viewport_size.x
-			var b_to_boss_y = (global_position.y - bullet.global_position.y) / viewport_size.y
-			var to_boss_dir = Vector2(b_to_boss_x, b_to_boss_y).normalized()
-			var approach_vel = bullet.velocity.dot((global_position - bullet.global_position).normalized()) / bullet.speed
-			b_approach.append(clamp(approach_vel, -1.0, 1.0))
-			b_dir_to_boss_x.append(to_boss_dir.x)  # ya en [-1, 1]
-			b_dir_to_boss_y.append(to_boss_dir.y)
-			b_dist.append(clamp(global_position.distance_to(bullet.global_position) / viewport_size.length(), 0.0, 1.0))
-			b_pos.append(bullet.global_position.x / viewport_size.x)
-			b_pos.append(bullet.global_position.y / viewport_size.y)
-			b_vel.append(bullet.velocity.x / bullet.speed)
-			b_vel.append(bullet.velocity.y / bullet.speed)
-		else:
-			b_dist.append(1.0)
-			b_pos.append(0.0)
-			b_pos.append(0.0)
-			b_vel.append(0.0)
-			b_vel.append(0.0)
-			b_dir_to_boss_x.append(0.0)
-			b_dir_to_boss_y.append(0.0)
-			b_approach.append(0.0)
-	
-	var mouse_pos: Vector2 = get_global_mouse_position()
-	dist_to_mouse = clamp(
-			global_position.distance_to(mouse_pos) / viewport_size.length(),
-			0.0, 1.0
-		)
-	
-	var inputs = [
-		global_position.x / viewport_size.x,
-		global_position.y / viewport_size.y,
-		GlobalVars.shot_impact.x / viewport_size.x,
-		GlobalVars.shot_impact.y / viewport_size.y,
-		time_since_last,
-		velocity.x / max_speed,
-		velocity.y / max_speed,
-		health / max_health,
-		dist_to_player,
-		angle_to_player_raw,  
-		clamp(rel_vel.x / max_speed, -1.0, 1.0),
-		clamp(rel_vel.y / max_speed, -1.0, 1.0),
-		player_vel.x,
-		player_vel.y,
-		dist_to_center,
-		float(current_action),                                                                                                                        
-		GlobalVars.current_step / GlobalConst.MAX_STEP_FOR_EPISODE,
-		#mouse_pos.x / viewport_size.x,
-		#mouse_pos.y / viewport_size.y,
-		#dist_to_mouse
-	]
-	inputs.append_array(b_dist)
-	inputs.append_array(b_pos)
-	inputs.append_array(b_vel)
-	inputs.append_array(b_dir_to_boss_x)
-	inputs.append_array(b_dir_to_boss_y)
-	inputs.append_array(b_approach)
-	return inputs
+	# Actualza los valores del jefe
+	move_dir = Vector2(raw_dir[0], raw_dir[1])
+	current_action = int(nn_outputs["action"]) if not force_action_mode else action_forced
+	shot_angle = nn_outputs["shot_angle"] * PI
 
-func dead_if_can() -> void:
-	if health <= 0:
-		set_process(false)
-		set_physics_process(false)
-		GlobalVars.boss = null
-		queue_free()
+# --- Para las automaticas ---
+func _update_values_by_auto() -> void:
+	pass
 
-func _get_near_player() -> PlayerController:
-	if GlobalVars.players.is_empty(): 
+# --- Para la informacion de las balas y bala cercana ---
+func _update_bullets_detecteds() -> void:
+	# Limpia las referencias inválidas (balas que ya murieron)
+	for i in range(bullets_detected.size()):
+		if bullets_detected[i] != null and not is_instance_valid(bullets_detected[i]):
+			bullets_detected[i] = null
+
+# --- Para la decision de acciones ---
+func _update_action(delta) -> void:
+	if boss_actions.has(current_action):
+		boss_actions[current_action].call(delta)
+
+# ------------------------------
+# --- Obtencion de entidades ---
+# ------------------------------
+func _get_near_player(players: Array[PlayerController]) -> PlayerController:
+	if players.is_empty(): 
 		return null
 	var near: PlayerController = null
 	var min_dist = INF
-	for player in GlobalVars.players:
+	for player in players:
 		if is_instance_valid(player):
 			var dist = global_position.distance_to(player.global_position)
 			if dist < min_dist:
@@ -225,72 +135,46 @@ func _get_near_player() -> PlayerController:
 				near = player
 	return near
 
-func update_bullets_norm_info() -> void:
-	# Limpia las referencias inválidas (balas que ya murieron)
-	for i in range(bullets_detected.size()):
-		if bullets_detected[i] != null and not is_instance_valid(bullets_detected[i]):
-			bullets_detected[i] = null
-
-	# Actualiza near_bullet
-	near_bullet = null
+func _get_near_bullet() -> Bullet:
+	var near: Bullet = null
 	var min_dist = INF
 	for bullet in bullets_detected:
 		if is_instance_valid(bullet):
 			var d = global_position.distance_to(bullet.global_position)
 			if d < min_dist:
 				min_dist = d
-				near_bullet = bullet
-
-func can_shot() -> bool:
-	return current_action == 1
+				near = bullet
+	return near
 
 # ----------------------------
 # --- Lógica de Acciones -----
 # ----------------------------
-
-func _update_action(delta) -> void:
-	if is_instance_valid(floating_movement):
-		floating_movement.update(delta)
-	if boss_actions.has(current_action):
-		boss_actions[current_action].call(delta)
-
-@warning_ignore("unused_parameter")
-func _nothing_action(delta: float) -> void:
+func _move_action(delta: float) -> void:
+	if not is_instance_valid(floating_movement):
+		push_error("No se encontro la instancia 'floating_movement'")
+	floating_movement.update(delta)
 	damage = min(damage + damage_increment, max_damage)
 
-func _ball_attack_action(delta: float) -> void:
+func _ball_attack_action(delta: float) -> void: 
+	move_dir = Vector2.ZERO
 	if damage > base_damage:
 		damage = base_damage
-	shot_attack.update(delta)
+	if is_instance_valid(shot_attack):
+		shot_attack.update(delta)
 
-func register_hit(hit: bool) -> void:
-	hit_history.append(1.0 if hit else 0.0)
-	if hit_history.size() > HIT_HISTORY_SIZE:
-		hit_history.pop_front()
+# ----------------
+# --- Utilidad ---
+# ----------------
+func can_shot() -> bool:
+	return current_action == 1
 
-func _on_damage_area_body_entered(bullet: Node2D) -> void:
-	if is_instance_valid(bullet):
-		if bullet.is_in_group("Bullets") and bullet.group_target == "Boss":
-			damage_area.apply_damage(bullet.damage)
-			bullet.delete_bullet()
+func _clamp_global_positions() -> void:
+	global_position.x = clamp(global_position.x, 0.0, GlobalConst.game_size.x)
+	global_position.y = clamp(global_position.y, 0.0, GlobalConst.game_size.y)
 
-func _on_bullet_detector_body_entered(bullet: Node2D) -> void:
-	if not (is_instance_valid(bullet) and bullet.is_in_group("Bullets") and bullet.group_target == "Boss"):
-		return
-	# Busca el primer slot libre (null) para insertar
-	for i in range(bullets_detected.size()):
-		if bullets_detected[i] == null:
-			bullets_detected[i] = bullet
-			return
-	# Si no hay slot libre, reemplaza el primero (FIFO)
-	bullets_detected[0] = bullet
-
-func _on_bullet_detector_body_exited(bullet: Node2D) -> void:
-	if not is_instance_valid(bullet):
-		return
-	var idx = bullets_detected.find(bullet)
-	if idx != -1:
-		bullets_detected[idx] = null
-
-func _on_damage_area_body_shape_entered(_body_rid, _body, _body_shape_index, _local_shape_index) -> void:
-	pass
+func _dead_if_can() -> void:
+	if health <= 0:
+		set_process(false)
+		set_physics_process(false)
+		GlobalVars.boss = null
+		queue_free()

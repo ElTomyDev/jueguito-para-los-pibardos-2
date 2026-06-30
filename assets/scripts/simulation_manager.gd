@@ -1,387 +1,296 @@
 extends Node2D
+class_name SimulationManager
 
-var viewport_size: Vector2
-
-@export var player             : PackedScene
-@export var boss               : PackedScene
+@export var player_scene       : PackedScene
+@export var boss_scene         : PackedScene
 @export var player_spawn_point : Node2D
 @export var boss_spawn_point   : Node2D
 @export var random_spawns      : bool = false
 @export var load_best_model    : bool = true
 @export var is_new_train       : bool = false
 
-# -------------------------------------------------------
-# REWARDS — todo en la misma escala, acumulado equilibrado
-# -------------------------------------------------------
-# --- Terminales ---
-const TERM_WIN_BASE        : float = 300.0
-const TERM_WIN_TIME_BONUS  : float = 100.0
-const TERM_LOSE            : float = -80.0
-const TERM_TIMEOUT_PEN     : float = -10.0
+var current_reward: float = 0.0
+var best_avg_reward: float = -INF
+var best_avg_episode: int = 0
 
-const R_FOR_STEP: float = -0.01
+var rewards_manager: RewardsManager
 
-# --- Supervivencia ---
-const R_DAMAGE_TAKEN_MAX   : float = -6.0
-const R_DODGE_DISTANCE_MIN : float = 30.0
-const R_DODGE_DISTANCE_MAX : float = 500.0
-const R_ACTIVE_DODGE_GAIN   : float = 0.4   # por cada unidad de distancia que se aleja
-const R_ACTIVE_DODGE_MAX    : float = 4.0  # máx por bala por frame (evita explotar)
-const R_PASSIVE_DODGE       : float = 0.0   # mantener una pequeña recompensa si la bala desaparece (por si acaso)
+var boss: BossController = null
+var player: PlayerController = null
+var bullets: Array[Bullet] = []
 
-# --- Precisión ---
-const R_DAMAGE_DEALT_MAX     : float = 8.0
-const R_SHOT_GOOD_AIM        : float = 6.5
-const R_SHOT_HIT_PLAYER      : float = 6.5
-const R_GOOD_AIM             : float = 1.0
-const R_SHOT_AND_NEAR_PLAYER : float = 0.2
-
-# --- Inactividad y movimiento ---
-const R_IDLE_PENALTY        : float = -0.4
-const IDLE_STREAK_THRESHOLD : int   = 10
-const R_NEAR_WALLS          : float = -1.0
-const R_STATIC              : float = -0.5
-
-# --- Umbrales y margenes ---
-const WALL_MARGIN      : float = 80.0
-const MIN_VEL_TRESHOLD : float = 5.0
+var current_episode: int = 0
+var current_step: int = 0
 
 # NN
 var nn_client: NNClient
+var nn_outputs: Dictionary = {
+	'move_dir':[0.0, 0.0],
+	'shot_angle': 0.0,
+	'action': 0
+	}
 
+# Para aumentar dificultad de jugador automatico.
 var _boss_win_rate_window: Array = []  # últimos N episodios
 const DIFFICULTY_WINDOW: int = 50
-
-# Historial para deltas de salud
-var last_boss_health  : float = 0.0
-var last_player_health: float = 0.0
-var last_shot_impact: Vector2 = Vector2.ZERO
-
-# Tracking de aim al momento del disparo
-var last_boss_shot_step    : int = -1
-var _idle_streak           : int = 0       # pasos consecutivos en action=0
-# Tracking de balas del jugador para reward de esquive
-var _player_bullets_near_last_frame: Dictionary = {}  # bullet_id → distancia anterior
-
-const MAX_REWARD_WINDOW: int = 20
-var reward_window_avg: Array = []
 
 var is_resetting: bool = false
 
 func _ready() -> void:
-	Engine.time_scale = 1.0
-	Engine.max_physics_steps_per_frame = 1
-	var train_data_path = GlobalConst.BEST_TRAIN_DATA_PATH if load_best_model else GlobalConst.TRAIN_DATA_PATH
-	_load_train_data(train_data_path)
-	_init_nn_core()
-	_reset_episode()
+	_init_simulation()
 
+@warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
-	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
-		if Input.is_action_just_pressed("is_automatic_player"):
-			GlobalVars.players[0].is_automatic = !GlobalVars.players[0].is_automatic
+	toggle_auto_player()
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	# Verificaciones antes de correr un paso
 	if is_resetting: return
-	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty(): return
-	
+	if not is_instance_valid(boss): return
+	if player.is_empty(): return
+
 	nn_client.poll()
 	
-	GlobalVars.current_step += 1
-	
-	var current_inputs: Array = _get_inputs_for_nn()
-	var reward: float  = _calculate_reward()
-	GlobalVars.current_reward += reward
+	var current_inputs: Array = _get_inputs_for_nn(boss)
+	var reward: float  = rewards_manager.calculate_reward(boss, player, bullets)
+	current_reward += reward
 	
 	# Solo enviar si no hay una petición activa
 	if not nn_client.is_busy():
 		nn_client.request_action(current_inputs, reward)
 	
 	var response = nn_client.get_last_action()
-	GlobalVars.nn_outputs["move_dir"]   = response.get("move_dir",   [0.0, 0.0])
-	GlobalVars.nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
-	GlobalVars.nn_outputs["action"]     = response.get("action",     0)
-	
+	nn_outputs["move_dir"]   = response.get("move_dir",   [0.0, 0.0])
+	nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
+	nn_outputs["action"]     = response.get("action",     0)
+	_update_step(delta)
+	current_step += 1
 	if _can_episode_end():
 		_handle_episode_end()
 
-func _update_difficulty() -> void:
-	# Calcula win rate del boss en la ventana
-	var wins = _boss_win_rate_window.count(true)
-	var win_rate = float(wins) / float(_boss_win_rate_window.size())
-	
-	# Solo sube la dificultad si el boss gana más del N%
-	if win_rate > 0.19:
-		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
-	elif win_rate < 0.09:
-		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
-# -------------------------------------------------------
-# Rewards
-# -------------------------------------------------------
-func _calculate_reward() -> float:
-	if not is_instance_valid(GlobalVars.boss) or GlobalVars.players.is_empty():
-		return 0.0
-	
-	var p = GlobalVars.players[0]
-	var b = GlobalVars.boss
-	var reward = 0.0
-	
-	# ── 0. PENALIZACION POR PASO ─────────────────────────────────────
-	reward += R_FOR_STEP
-	# ── 1. SUPERVIVENCIA: daño recibido ─────────────────────────────────────
-	var damage_taken = last_boss_health - b.health
-	if damage_taken > 0.0:
-		var taken_ratio = clamp(damage_taken / b.max_health, 0.0, 1.0)
-		reward += taken_ratio * R_DAMAGE_TAKEN_MAX  # negativo
-	
-	# ── 1b. SUPERVIVENCIA: esquivar balas del jugador ────────────────────────
-	# Primero actualizamos el frame actual con dist + hit_target
-	var current_player_bullets: Dictionary = {}
-	for bullet in GlobalVars.bullets:
-		if is_instance_valid(bullet) and bullet.from_group == "Players":
-			var dist = b.global_position.distance_to(bullet.global_position)
-			current_player_bullets[bullet.get_instance_id()] = {
-				"dist": dist,
-				"hit": bullet.hit_target
-			}
-	
-	for bullet_id in _player_bullets_near_last_frame:
-		var prev = _player_bullets_near_last_frame[bullet_id]
-		var prev_dist = prev["dist"]
-		var prev_hit = prev["hit"]
-		# Si la bala aún existe en este frame
-		if current_player_bullets.has(bullet_id):
-			var curr_dist = current_player_bullets[bullet_id]["dist"]
-			var curr_hit = current_player_bullets[bullet_id]["hit"]
-			# Si no ha impactado todavía
-			if not curr_hit and not prev_hit and curr_dist < R_DODGE_DISTANCE_MAX:
-				var dist_change = prev_dist - curr_dist   # positiva si se acerca, negativa si se aleja
-				if dist_change < 0:  # se está alejando
-					var danger_factor = clamp(1.0 - (curr_dist / R_DODGE_DISTANCE_MAX), 0.0, 1.0)
-					var active_reward = clamp(abs(dist_change) * R_ACTIVE_DODGE_GAIN * (1.0 + danger_factor), 0.0, R_ACTIVE_DODGE_MAX)
-					reward += active_reward
-		else:
-			# La bala desapareció este frame: recompensa pasiva (opcional, pero baja)
-			if not prev_hit and prev_dist < R_DODGE_DISTANCE_MAX and prev_dist > R_DODGE_DISTANCE_MIN:
-				reward += R_PASSIVE_DODGE
-	_player_bullets_near_last_frame = current_player_bullets
-	
-	# ── 2. PRECISIÓN: aim en el momento del disparo ──────────────────────────
-	var boss_shot_step = b.shot_attack.last_shot_step
-	if boss_shot_step > last_boss_shot_step and boss_shot_step > 0:
-		last_boss_shot_step = boss_shot_step
-		if is_instance_valid(b.near_player):
-			var angle_to_player = atan2(
-				p.global_position.y - b.global_position.y,
-				p.global_position.x - b.global_position.x
-			)
-			var angle_diff = abs(wrapf(b.shot_angle - angle_to_player, -PI, PI))
-			var aim_quality = clamp(1.0 - (angle_diff / (PI / 2.0)), 0.0, 1.0)
-			reward += aim_quality * R_SHOT_GOOD_AIM
-	
-	# ── 2b. PRECISIÓN: bala del boss que impactó al jugador ──────────────────
-	if GlobalVars.shot_impact != last_shot_impact:
-		var dist_impact_to_player = GlobalVars.shot_impact.distance_to(p.global_position)
-		if dist_impact_to_player < 80.0:
-			reward += R_SHOT_HIT_PLAYER
-		last_shot_impact = GlobalVars.shot_impact
-	
-	# ── 2c. PRECISIÓN: Daño infligido al jugador ────────────────────────────────────────
-	var damage_dealt = last_player_health - p.health
-	if damage_dealt > 0.0:
-		var dmg_ratio = clamp(damage_dealt / p.max_health, 0.0, 1.0)
-		reward += dmg_ratio * R_DAMAGE_DEALT_MAX
-	
-	# ── 2d. PRECISIÓN: recompensa por frame cuando está en modo ataque ──────────
-	if is_instance_valid(b.near_player) and b.current_action == 1:
-		var angle_to_player_dense = atan2(
-			p.global_position.y - b.global_position.y,
-			p.global_position.x - b.global_position.x
-		)
-		var angle_diff_dense = abs(wrapf(b.shot_angle - angle_to_player_dense, -PI, PI))
-		var aim_quality_dense = clamp(1.0 - (angle_diff_dense / (PI / 2.0)), 0.0, 1.0)
-		reward += aim_quality_dense * R_GOOD_AIM
-	
-	# ── 2e. PRECISIÓN: recompensa por por acercarse al jugador en modo ataque ──────────
-	if b.current_action == 1 and is_instance_valid(b.near_player):
-		var dist = b.global_position.distance_to(b.near_player.global_position)
-		var proximity_bonus = clamp(1.0 - (dist / viewport_size.length()), 0.0, 1.0)
-		reward += proximity_bonus * R_SHOT_AND_NEAR_PLAYER  # pequeño, por frame
-	
-	# ── Penalización por inactividad prolongada ──────────────────────────────
-	if b.current_action == 0:
-		_idle_streak += 1
-		if _idle_streak > IDLE_STREAK_THRESHOLD:
-			var idle_factor = clamp(float(_idle_streak - IDLE_STREAK_THRESHOLD) / 100.0, 0.0, 1.0)
-			reward += R_IDLE_PENALTY * idle_factor
-	else:
-		_idle_streak = 0
-	
-	# ── Penalización por estar cerca de las paredes ──────────────────────────────
-	var wall_dist = min(
-		b.global_position.x,
-		viewport_size.x - b.global_position.x,
-		b.global_position.y,
-		viewport_size.y - b.global_position.y
-	)
-	if wall_dist < WALL_MARGIN:
-		var wall_factor = 1.0 - (wall_dist / WALL_MARGIN)
-		reward += R_NEAR_WALLS * wall_factor  # proporcional, no binaria
-	
-	# ── Penalización por quedarse quieto ──────────────────────────────
-	if b.velocity.length() < MIN_VEL_TRESHOLD:
-		reward += R_STATIC
-	
-	# ── Actualizar tracking ──────────────────────────────────────────────────
-	last_player_health = p.health
-	last_boss_health   = b.health
-	
-	return reward
+func _update_step(delta) -> void:
+	boss.update(delta, nn_outputs, [player])
+	player.update(delta, boss, bullets, current_episode)
+	for b in bullets:
+		b.update(delta)
 
-func _calculate_final_reward() -> float:
-	var steps_used = float(GlobalVars.current_step)
-	var max_steps  = float(GlobalConst.MAX_STEP_FOR_EPISODE)
-	var time_ratio = 1.0 - clamp(steps_used / max_steps, 0.0, 1.0)
-	
-	if GlobalVars.players.is_empty() or \
-	   (not GlobalVars.players.is_empty() and GlobalVars.players[0].health <= 0.0):
-		GlobalVars.boss_wins += 1
-		return TERM_WIN_BASE + time_ratio * TERM_WIN_TIME_BONUS  # 100..130
-	
-	if is_instance_valid(GlobalVars.boss) and GlobalVars.boss.health <= 0.0:
-		var player_dmg_ratio = 0.0
-		if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
-			player_dmg_ratio = 1.0 - (GlobalVars.players[0].health / GlobalVars.players[0].max_health)
-		GlobalVars.player_wins += 1
-		return TERM_LOSE + player_dmg_ratio * 20.0  # entre -100 y -60
-	
-	var player_hp_ratio = 1.0
-	if not GlobalVars.players.is_empty() and is_instance_valid(GlobalVars.players[0]):
-		player_hp_ratio = GlobalVars.players[0].health / GlobalVars.players[0].max_health
-		GlobalVars.timeouts += 1
-	return TERM_TIMEOUT_PEN * player_hp_ratio  # entre -30 y 0
+func _init_simulation() -> void:
+	Engine.time_scale = 1.0
+	Engine.max_physics_steps_per_frame = 1
+	nn_client = NNClient.new()
+	_load_train_data(GlobalConst.BEST_TRAIN_DATA_PATH if load_best_model else GlobalConst.TRAIN_DATA_PATH)
+	_reset_episode()
 
+# Arreglar player_dificuly
 func _handle_episode_end() -> void:
 	is_resetting = true
 	
-	var boss_win: bool = GlobalVars.players.is_empty() or \
-		(not GlobalVars.players.is_empty() and GlobalVars.players[0].health <= 0.0)
+	var boss_win: bool = (not is_instance_valid(player) and player.health <= 0.0)
 	
 	# Actualizar ventana de win rate ANTES de calcular final reward
 	_boss_win_rate_window.append(boss_win)
 	if _boss_win_rate_window.size() > DIFFICULTY_WINDOW:
 		_boss_win_rate_window.pop_front()
 	if _boss_win_rate_window.size() >= DIFFICULTY_WINDOW:
-		_update_difficulty()
+		update_difficulty(_boss_win_rate_window)
 	
-	var timed_out: bool = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
-	var final_reward: float = _calculate_final_reward()
-	nn_client.notify_episode_end(GlobalVars.current_episode, GlobalVars.current_reward, final_reward, timed_out, boss_win)
+	var timed_out: bool = current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
+	var final_reward: float = rewards_manager.calculate_final_reward(boss, player, current_step)
+	nn_client.notify_episode_end(
+		current_episode,
+		current_reward,
+		final_reward,
+		timed_out,
+		boss_win
+	)
 	
-	_update_best_avg_reward()
 	_save_train_data(GlobalConst.TRAIN_DATA_PATH)
-	
-	GlobalVars.current_episode += 1
-	GlobalVars.best_episode_rewards.append(GlobalVars.best_avg_reward)
-	GlobalVars.episode_rewards.append(GlobalVars.current_reward)
+	var best_info_dict = rewards_manager.update_best_avg_reward(current_reward, current_episode, _save_train_data ,best_avg_reward, best_avg_episode)
+	best_avg_reward = best_info_dict['best_reward']
+	best_avg_episode = best_info_dict['best_episode']
+	current_episode += 1
+	GlobalVars.best_episode_rewards.append(best_avg_reward)
+	GlobalVars.episode_rewards.append(current_reward)
 	
 	_reset_episode()
 
-# ----------
+func update_difficulty(boss_win_rate_window: Array) -> void:
+	# Calcula win rate del boss_scene en la ventana
+	var wins = boss_win_rate_window.count(true)
+	var win_rate = float(wins) / float(boss_win_rate_window.size())
+	
+	# Solo sube la dificultad si el boss_scene gana más del N%
+	if win_rate > 0.19:
+		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
+	elif win_rate < 0.09:
+		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
+
+
+
+# ------
 # Inputs
-# ----------
-func _get_inputs_for_nn() -> Array:
-	var inputs: Array = []
-	if not is_instance_valid(GlobalVars.boss): # Crea 0.0 por la cantidad de inputs que devuelve SOLO el boss
-		for _i in range(GlobalConst.INPUTS): inputs.append(0.0)
-		return inputs
+# ------
+func _get_inputs_for_nn(boss_i: BossController) -> Array:
+	if not is_instance_valid(boss_i):
+		push_error("Para obtener los inputs debe existir un 'BossController'.")
+	var dist_to_player  = 1.0
+	var dist_to_mouse: float = 1.0
+	var angle_to_player_raw: float = 0.0  # ángulo directo al jugador, normalizado
+	var player_vel       = Vector2.ZERO
+	var rel_vel          = Vector2.ZERO
+	var time_since_last: float
 	
-	inputs.append_array(GlobalVars.boss.get_inputs())
 	
-	if is_instance_valid(GlobalVars.boss.near_player):
-		inputs.append_array(GlobalVars.boss.near_player.get_inputs())
-	else:# Crea 0.0 por la cantidad de inputs que devuelve SOLO el jugador
-		for _i in range(5): inputs.append(0.0)
+	if is_instance_valid(boss_i.near_player):
+		dist_to_player = clamp(
+			boss_i.global_position.distance_to(boss_i.near_player.global_position) / GlobalConst.game_size.length(),
+			0.0, 1.0
+		)
+		var to_player = (boss_i.near_player.global_position - boss_i.global_position).angle()
+		angle_to_player_raw = to_player / PI  # normalizado [-1, 1]
+		player_vel  = boss_i.near_player.velocity.normalized()
+		rel_vel     = boss_i.near_player.velocity - boss_i.velocity
 	
-	assert(inputs.size() == GlobalConst.INPUTS,
-		"_get_inputs_for_nn() retornó %d floats, se esperaban %d" % [inputs.size(), GlobalConst.INPUTS])
+	var src_last_shot = boss_i.shot_attack.last_shot_step if is_instance_valid(boss_i.shot_attack) else -1
+	if src_last_shot <= 0:
+		time_since_last = 1.0
+	else:
+		time_since_last = clamp(
+			float(GlobalVars.current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
+			0.0, 1.0
+		)
 	
+	var dist_to_center = boss_i.global_position.distance_to(GlobalConst.game_size / 2) / GlobalConst.game_size.length()
+	var b_dist: Array = []
+	var b_pos:  Array = []
+	var b_vel:  Array = []
+	var b_dir_to_boss_y:  Array = []
+	var b_dir_to_boss_x:  Array = []
+	var b_approach: Array = []
+	for bullet in boss_i.bullets_detected:
+		if is_instance_valid(bullet):
+			var b_to_boss_x = (boss_i.global_position.x - bullet.global_position.x) / GlobalConst.game_size.x
+			var b_to_boss_y = (boss_i.global_position.y - bullet.global_position.y) / GlobalConst.game_size.y
+			var to_boss_dir = Vector2(b_to_boss_x, b_to_boss_y).normalized()
+			var approach_vel = bullet.velocity.dot((boss_i.global_position - bullet.global_position).normalized()) / bullet.speed
+			b_approach.append(clamp(approach_vel, -1.0, 1.0))
+			b_dir_to_boss_x.append(to_boss_dir.x)  # ya en [-1, 1]
+			b_dir_to_boss_y.append(to_boss_dir.y)
+			b_dist.append(clamp(boss_i.global_position.distance_to(bullet.global_position) / GlobalConst.game_size.length(), 0.0, 1.0))
+			b_pos.append(bullet.global_position.x / GlobalConst.game_size.x)
+			b_pos.append(bullet.global_position.y / GlobalConst.game_size.y)
+			b_vel.append(bullet.velocity.x / bullet.speed)
+			b_vel.append(bullet.velocity.y / bullet.speed)
+		else:
+			b_dist.append(1.0)
+			b_pos.append(0.0)
+			b_pos.append(0.0)
+			b_vel.append(0.0)
+			b_vel.append(0.0)
+			b_dir_to_boss_x.append(0.0)
+			b_dir_to_boss_y.append(0.0)
+			b_approach.append(0.0)
+	
+	var mouse_pos: Vector2 = get_global_mouse_position()
+	dist_to_mouse = clamp(
+			global_position.distance_to(mouse_pos) / GlobalConst.game_size.length(),
+			0.0, 1.0
+		)
+	
+	var inputs = [
+		boss_i.global_position.x / GlobalConst.game_size.x,
+		boss_i.global_position.y / GlobalConst.game_size.y,
+		boss_i.shot_impact.x / GlobalConst.game_size.x,
+		boss_i.shot_impact.y / GlobalConst.game_size.y,
+		time_since_last,
+		boss_i.velocity.x / boss_i.max_speed,
+		boss_i.velocity.y / boss_i.max_speed,
+		boss_i.health / boss_i.max_health,
+		dist_to_player,
+		angle_to_player_raw,  
+		clamp(rel_vel.x / boss_i.max_speed, -1.0, 1.0),
+		clamp(rel_vel.y / boss_i.max_speed, -1.0, 1.0),
+		player_vel.x,
+		player_vel.y,
+		dist_to_center,
+		float(boss_i.current_action)/ len(boss_i.current_action),                                                                                                                        
+		clamp(current_step / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
+		clamp(boss_i.damage / boss_i.max_damage, 0.0, 1.0),
+		mouse_pos.x / GlobalConst.game_size.x,
+		mouse_pos.y / GlobalConst.game_size.y,
+		dist_to_mouse
+	]
+	inputs.append_array(b_dist)
+	inputs.append_array(b_pos)
+	inputs.append_array(b_vel)
+	inputs.append_array(b_dir_to_boss_x)
+	inputs.append_array(b_dir_to_boss_y)
+	inputs.append_array(b_approach)
 	return inputs
 
 # ------------
 # Utilidad
 # ------------
 func _reset_episode() -> void:
-	for bullet in GlobalVars.bullets:
+	for bullet in bullets:
 		if is_instance_valid(bullet): bullet.queue_free()
-	for p in GlobalVars.players:
-		if is_instance_valid(p): p.queue_free()
-	if is_instance_valid(GlobalVars.boss): GlobalVars.boss.queue_free()
+	if is_instance_valid(player): player.queue_free()
+	if is_instance_valid(boss): boss.queue_free()
 	
-	last_boss_shot_step = -1
-	_idle_streak = 0
-	_player_bullets_near_last_frame = {}
-	GlobalVars.boss          = null
-	GlobalVars.bullets.clear()
-	GlobalVars.players.clear()
-	GlobalVars.shot_impact   = Vector2(viewport_size.x / 2, viewport_size.y / 2)
-	GlobalVars.current_step  = 0
-	GlobalVars.current_reward = 0.0
-	GlobalVars.nn_outputs["move_dir"]   = [0.0, 0.0]
-	GlobalVars.nn_outputs["shot_angle"] = 0.0
-	GlobalVars.nn_outputs["action"]     = 0
+	boss = null
+	player = null
+	bullets.clear()
+	current_step  = 0
+	current_reward = 0.0
+	nn_outputs["move_dir"]   = [0.0, 0.0]
+	nn_outputs["shot_angle"] = 0.0
+	nn_outputs["action"]     = 0
 	_spawn_entities()
 
-func _init_nn_core() -> void:
-	nn_client = NNClient.new()
-
 func _spawn_entities() -> void:
-	var player_instance = player.instantiate() as PlayerController
-	var boss_instance   = boss.instantiate() as BossController
-	viewport_size = get_viewport().get_visible_rect().size
+	var player_instance = player_scene.instantiate() as PlayerController
+	var boss_instance   = boss_scene.instantiate() as BossController
 	
-	if not random_spawns:
-		player_instance.global_position = player_spawn_point.global_position
-		boss_instance.global_position   = boss_spawn_point.global_position
-	else:
-		var margin_spawn: float = 80.0
-		var margin: float  = 200.0
-		var max_attempts   = 20
-		var player_pos     := Vector2.ZERO
-		var boss_pos       := Vector2.ZERO
-		for _i in range(max_attempts):
-			player_pos = Vector2(
-				randf_range(margin_spawn, viewport_size.x - margin_spawn),
-				randf_range(margin_spawn, viewport_size.y - margin_spawn)
-			)
-			boss_pos   = Vector2(
-				randf_range(margin_spawn, viewport_size.x - margin_spawn),
-				randf_range(margin_spawn, viewport_size.y - margin_spawn)
-			)
-			if player_pos.distance_to(boss_pos) >= margin:
-				break
-		player_instance.global_position = player_pos
-		boss_instance.global_position   = boss_pos
+	var entities_pos: Array = _get_entities_position() 
+	player_instance.global_position = entities_pos[0]
+	boss_instance.global_position   = entities_pos[1]
 	
-	boss_instance.boss_ready.connect(_on_boss_ready.bind(player_instance, boss_instance), CONNECT_ONE_SHOT)
+	player = player_instance.init()
+	boss = boss_instance.init()
 
 	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)
 
-func _on_boss_ready(player_instance: PlayerController, boss_instance: BossController) -> void:
-	# En este punto ambos nodos están en el árbol y listos
-	last_boss_health    = boss_instance.health
-	last_player_health  = player_instance.health
-	is_resetting = false
+func _get_entities_position() -> Array:
+	var player_pos: Vector2
+	var boss_pos: Vector2
+	if not random_spawns:
+		player_pos = player_spawn_point.global_position
+		boss_pos = boss_spawn_point.global_position
+	else:
+		var margin_spawn: float = 79.0
+		var margin: float  = 199.0
+		var max_attempts   = 19
+		for _i in range(max_attempts):
+			player_pos = Vector2(
+				randf_range(margin_spawn, GlobalConst.game_size.x - margin_spawn),
+				randf_range(margin_spawn, GlobalConst.game_size.y - margin_spawn)
+			)
+			boss_pos   = Vector2(
+				randf_range(margin_spawn, GlobalConst.game_size.x - margin_spawn),
+				randf_range(margin_spawn, GlobalConst.game_size.y - margin_spawn)
+			)
+			if player_pos.distance_to(boss_pos) >= margin:
+				break
+	return [player_pos, boss_pos]
 
 func _can_episode_end() -> bool:
-	if GlobalVars.players.is_empty(): return true
-	if not is_instance_valid(GlobalVars.boss): return true
-	if not is_instance_valid(GlobalVars.players[0]): return true
+	if not is_instance_valid(boss): return true
+	if not is_instance_valid(player): return true
 	return (
-		GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
-		or GlobalVars.boss.health   <= 0.0
-		or GlobalVars.players[0].health <= 0.0
+		current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
+		or boss.health   <= 0.0
+		or player.health <= 0.0
 	)
 
 func _load_train_data(path) -> void:
@@ -390,9 +299,9 @@ func _load_train_data(path) -> void:
 		if data.is_empty():
 			print("No hay datos para cargar: ", path)
 			return
-		GlobalVars.current_episode   = data.get('episode', 0)
-		GlobalVars.best_avg_reward   = data.get('best_avg_reward', -1e9)
-		GlobalVars.best_avg_episode  = data.get('best_avg_episode', 0)
+		current_episode   = data.get('episode', 0)
+		best_avg_reward   = data.get('best_avg_reward', -INF)
+		best_avg_episode  = data.get('best_avg_episode', 0)
 		GlobalVars.player_wins = data.get('player_wins', 0)
 		GlobalVars.boss_wins = data.get('boss_wins', 0)
 		GlobalVars.timeouts = data.get('timeouts', 0)
@@ -402,9 +311,9 @@ func _load_train_data(path) -> void:
 
 func _save_train_data(path) -> void:
 	var data: Dictionary = {
-		'episode':        GlobalVars.current_episode,
-		'best_avg_reward':  GlobalVars.best_avg_reward,
-		'best_avg_episode': GlobalVars.best_avg_episode,
+		'episode':        current_episode,
+		'best_avg_reward':  best_avg_reward,
+		'best_avg_episode': best_avg_episode,
 		'player_wins': GlobalVars.player_wins,
 		'boss_wins': GlobalVars.boss_wins,
 		'timeouts': GlobalVars.timeouts,
@@ -414,20 +323,8 @@ func _save_train_data(path) -> void:
 	}
 	ExternalFileManager.save_data(data, path)
 
-func _update_best_avg_reward() -> void:
-	# Guarda la mejor recompensa
-	var best_avg: float = 0.0
+func toggle_auto_player() -> void:
+	if not is_instance_valid(player): return
 	
-	reward_window_avg.append(GlobalVars.current_reward)
-	if reward_window_avg.size() > MAX_REWARD_WINDOW:
-		reward_window_avg.pop_front()
-	
-	if reward_window_avg.size() == MAX_REWARD_WINDOW:
-		for r in reward_window_avg:
-			best_avg += r
-		best_avg = best_avg / float(reward_window_avg.size())
-		
-		if GlobalVars.best_avg_reward < best_avg:
-			GlobalVars.best_avg_reward = best_avg
-			GlobalVars.best_avg_episode = GlobalVars.current_episode
-			_save_train_data(GlobalConst.BEST_TRAIN_DATA_PATH)
+	if Input.is_action_just_pressed("is_automatic_player"):
+		player.is_automatic = !player.is_automatic

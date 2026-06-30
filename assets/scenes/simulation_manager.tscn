@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://bi11g54osr03a"]
+[gd_scene load_steps=5 format=3 uid="uid://bi11g54osr03a"]
 
 [ext_resource type="Script" uid="uid://dcdr7m1g6hpch" path="res://assets/scripts/simulation_manager.gd" id="1_fdx1r"]
 [ext_resource type="PackedScene" uid="uid://cfwgy1ayuvs04" path="res://assets/scenes/characters/player_controller.tscn" id="2_465v1"]
 [ext_resource type="PackedScene" uid="uid://do24pdmmrhm74" path="res://assets/scenes/characters/boss_controller.tscn" id="3_inlq4"]
+[ext_resource type="Script" uid="uid://cfacwq7vg5ei7" path="res://assets/scripts/rewards_manager.gd" id="4_inlq4"]
 
 [node name="SimulationManager" type="Node2D" node_paths=PackedStringArray("boss_spawn_point")]
 script = ExtResource("1_fdx1r")
@@ -13,3 +14,6 @@ boss_spawn_point = NodePath("SpawnBoss")
 [node name="SpawnPlayer" type="Node2D" parent="."]
 
 [node name="SpawnBoss" type="Node2D" parent="."]
+
+[node name="RewardsManager" type="Node2D" parent="."]
+script = ExtResource("4_inlq4")
