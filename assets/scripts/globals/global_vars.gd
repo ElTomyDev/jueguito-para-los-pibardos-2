@@ -9,4 +9,3 @@ var player_difficulty: float = 0.0
 var episode_rewards: Array = [] # Para graficar 
 var best_episode_rewards: Array = []
 var recent_rewards: Array = []   # guarda las últimas N recompensas
-

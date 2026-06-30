@@ -49,4 +49,3 @@ func delete_bullet(boss: BossController=null, player: PlayerController=null):
 		else:
 			player.shot_impact = boss.global_position
 	queue_free()
-

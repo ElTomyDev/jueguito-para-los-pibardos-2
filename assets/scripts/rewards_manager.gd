@@ -179,11 +179,11 @@ func calculate_final_reward(boss: BossController, player: PlayerController, curr
 	var max_steps  = float(GlobalConst.MAX_STEP_FOR_EPISODE)
 	var time_ratio = 1.0 - clamp(steps_used / max_steps, 0.0, 1.0)
 	
-	if (not is_instance_valid(player) and player.health <= 0.0):
+	if (not is_instance_valid(player) or player.health <= 0.0):
 		GlobalVars.boss_wins += 1
 		return TERM_WIN_BASE + time_ratio * TERM_WIN_TIME_BONUS  # 100..130
 	
-	if is_instance_valid(boss) and boss.health <= 0.0:
+	if is_instance_valid(boss) or boss.health <= 0.0:
 		var player_dmg_ratio = 0.0
 		if is_instance_valid(player):
 			player_dmg_ratio = 1.0 - (player.health / player.max_health)
@@ -226,5 +226,3 @@ func reset() -> void:
 	
 	last_boss_health = 0.0
 	last_player_health = 0.0
-
-

@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://cfwgy1ayuvs04"]
+[gd_scene load_steps=11 format=3 uid="uid://cfwgy1ayuvs04"]
 
 [ext_resource type="Texture2D" uid="uid://d0cqjl25fnr" path="res://icon.svg" id="1_uagbc"]
 [ext_resource type="Script" uid="uid://mbm26ve2o65w" path="res://assets/scripts/characters/player/player_controller.gd" id="1_vwu8u"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://cqjn8cs6vpvfh" path="res://assets/scripts/characters/player/adjustable_jump.gd" id="5_xjp6k"]
 [ext_resource type="Script" uid="uid://chbyod06mnen5" path="res://assets/scripts/attacks/shot_attack.gd" id="6_btdcj"]
 [ext_resource type="Script" uid="uid://dv8tqb8qgxvle" path="res://assets/scripts/characters/damage_area.gd" id="7_btdcj"]
+[ext_resource type="Script" uid="uid://dt0e8ldysgcra" path="res://assets/scripts/characters/player/player_collisions.gd" id="7_q1qul"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_vwu8u"]
 size = Vector2(24, 24)
@@ -51,6 +52,9 @@ shot_point = NodePath("ShotPoint")
 [node name="ShotPoint" type="Node2D" parent="PlayerMechanics/Attacks/Shot"]
 position = Vector2(12, 0)
 
+[node name="Collisions" type="Node2D" parent="PlayerMechanics"]
+script = ExtResource("7_q1qul")
+
 [node name="DamageArea" type="Area2D" parent="." groups=["Players"]]
 collision_layer = 0
 collision_mask = 4
@@ -59,4 +63,4 @@ script = ExtResource("7_btdcj")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
 shape = SubResource("CircleShape2D_8ckkg")
 
-[connection signal="body_entered" from="DamageArea" to="." method="_on_damage_area_body_entered"]
+[connection signal="body_entered" from="DamageArea" to="PlayerMechanics/Collisions" method="_on_damage_area_body_entered"]

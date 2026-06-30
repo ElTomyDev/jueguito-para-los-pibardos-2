@@ -6,6 +6,7 @@ class_name PlayerController
 @onready var smooth_movement: PlayerSmoothMovement = $PlayerMechanics/SmoothMovement as PlayerSmoothMovement
 @onready var adjustable_jump: PlayerAdjustableJump = $PlayerMechanics/AdjustableJump as PlayerAdjustableJump
 @onready var shot_attack: ShotAttack = $PlayerMechanics/Attacks/Shot as ShotAttack
+@onready var collisions: PlayerCollision = $PlayerMechanics/Collisions as PlayerCollision
 
 @onready var damage_area: DamageArea = $DamageArea as DamageArea
 
@@ -66,6 +67,7 @@ func init() -> PlayerController:
 	adjustable_jump.setup(self)
 	damage_area.setup(self)
 	shot_attack.setup(self)
+	collisions.setup(self)
 	return self
 
 # MOVER A OTRO LADO
@@ -221,9 +223,3 @@ func _get_near_bullet(bullets: Array[Bullet]) -> Bullet:
 # ------------------
 # --- Colisiones ---
 # ------------------
-func _on_damage_area_body_entered(bullet: Bullet) -> void:
-	if is_instance_valid(bullet):
-		if bullet.is_in_group("Bullets") and bullet.group_target == "Players":
-			damage_area.apply_damage(bullet.damage)
-			bullet.delete_bullet(near_boss, self)
-

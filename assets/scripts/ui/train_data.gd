@@ -32,8 +32,23 @@ var update_rate: int = 10
 var _last_plotted_episode: int = -1
 var _ui_frame_counter: int = 0
 
-@warning_ignore("unused_parameter")
-func _process(delta: float) -> void:
+func update(
+	current_episode:int,
+	current_step:int,
+	current_reward:float,
+	shot_impact:Vector2,
+	best_avg_reward:float,
+	best_avg_episode:int,
+	boss_wins:int,
+	player_wins:int,
+	timeouts:int,
+	player_difficulty:float,
+	player_pos: Vector2,
+	boss_pos: Vector2,
+	move_dir:Array,
+	shot_angle: float,
+	action: int
+) -> void:
 	update_info_view()
 	_ui_frame_counter += 1
 	if view_graph:
@@ -43,29 +58,60 @@ func _process(delta: float) -> void:
 		reward_graph.visible = false
 	
 	if view_train_info and _ui_frame_counter % 6 == 0:
-		update_train_labels()
-		update_nn_labels()
+		update_train_labels(
+			current_episode,
+			current_step, 
+			current_reward, 
+			shot_impact,
+			best_avg_reward,
+			best_avg_episode,
+			boss_wins,
+			player_wins,
+			timeouts,
+			player_difficulty,
+			player_pos,
+			boss_pos
+		)
+		update_nn_labels(
+			move_dir,
+			shot_angle,
+			action
+		)
 
-func update_train_labels() -> void:
-	episode_label.text = "Episode: %d" % [GlobalVars.current_episode]
-	step_label.text = "Step: %d" % [GlobalVars.current_step]
-	reward_label.text = "Reward: %d" % [GlobalVars.current_reward]
-	last_shot_impact_label.text = "Shot Impact To Player: (%d, %d)" % [GlobalVars.shot_impact.x, GlobalVars.shot_impact.y]
-	best_avg_reward_label.text = "Best Avg Reward: %.2f" % [GlobalVars.best_avg_reward]
-	best_episode_label.text = "Best Episode: %d" % [GlobalVars.best_avg_episode]
-	boss_win_label.text = "Boss Wins: %d" % [GlobalVars.boss_wins]
-	player_win_label.text = "Player Wins: %d" % [GlobalVars.player_wins]
-	timeouts_label.text = "Timeouts: %d" % [GlobalVars.timeouts]
-	player_difficulty_label.text = "Player difficulty: %.4f" % [GlobalVars.player_difficulty]
-	if is_instance_valid(GlobalVars.players[0]): 
-		player_pos_label.text = "Player Position: (%d, %d)" % [GlobalVars.players[0].global_position.x, GlobalVars.players[0].global_position.y]
-	if is_instance_valid(GlobalVars.boss):
-		boss_pos_label.text = "Boss Position: (%d, %d)" % [GlobalVars.boss.global_position.x, GlobalVars.boss.global_position.y]
-	
-func update_nn_labels() -> void:
-	move_dir_label.text = "Move Dir[0][1]: (%.2f, %.2f)" % [GlobalVars.nn_outputs["move_dir"][0], GlobalVars.nn_outputs["move_dir"][1]]
-	shot_angle_label.text = "Shot Angle[2]: %.2f" % [GlobalVars.nn_outputs["shot_angle"]]
-	action_label.text = "Action[3]: %d" % [GlobalVars.nn_outputs["action"]]
+func update_train_labels(
+	current_episode:int,
+	current_step:int,
+	current_reward:float,
+	shot_impact:Vector2,
+	best_avg_reward:float,
+	best_avg_episode:int,
+	boss_wins:int,
+	player_wins:int,
+	timeouts:int,
+	player_difficulty:float,
+	player_pos: Vector2,
+	boss_pos: Vector2) -> void:
+	episode_label.text = "Episode: %d" % [current_episode]
+	step_label.text = "Step: %d" % [current_step]
+	reward_label.text = "Reward: %d" % [current_reward]
+	last_shot_impact_label.text = "Shot Impact To Player: (%d, %d)" % [shot_impact.x, shot_impact.y]
+	best_avg_reward_label.text = "Best Avg Reward: %.2f" % [best_avg_reward]
+	best_episode_label.text = "Best Episode: %d" % [best_avg_episode]
+	boss_win_label.text = "Boss Wins: %d" % [boss_wins]
+	player_win_label.text = "Player Wins: %d" % [player_wins]
+	timeouts_label.text = "Timeouts: %d" % [timeouts]
+	player_difficulty_label.text = "Player difficulty: %.4f" % [player_difficulty]
+	player_pos_label.text = "Player Position: (%d, %d)" % [player_pos.x, player_pos.y]
+	boss_pos_label.text = "Boss Position: (%d, %d)" % [boss_pos.x, boss_pos.y]
+
+func update_nn_labels(
+	move_dir:Array,
+	shot_angle: float,
+	action: int
+) -> void:
+	move_dir_label.text = "Move Dir[0][1]: (%.2f, %.2f)" % [move_dir[0], move_dir[1]]
+	shot_angle_label.text = "Shot Angle[2]: %.2f" % [shot_angle]
+	action_label.text = "Action[3]: %d" % [action]
 
 func update_info_view() -> void:
 	if Input.is_action_just_pressed("toggle_train_info"):

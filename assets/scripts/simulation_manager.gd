@@ -13,7 +13,7 @@ var current_reward: float = 0.0
 var best_avg_reward: float = -INF
 var best_avg_episode: int = 0
 
-var rewards_manager: RewardsManager
+@onready var rewards_manager: RewardsManager = $RewardsManager as RewardsManager
 
 var boss: BossController = null
 var player: PlayerController = null
@@ -47,7 +47,7 @@ func _physics_process(delta: float) -> void:
 	# Verificaciones antes de correr un paso
 	if is_resetting: return
 	if not is_instance_valid(boss): return
-	if player.is_empty(): return
+	if not is_instance_valid(player): return
 
 	nn_client.poll()
 	
@@ -69,7 +69,7 @@ func _physics_process(delta: float) -> void:
 		_handle_episode_end()
 
 func _update_step(delta) -> void:
-	boss.update(delta, nn_outputs, [player])
+	boss.update(delta, nn_outputs, player)
 	player.update(delta, boss, bullets, current_episode)
 	for b in bullets:
 		b.update(delta)
@@ -77,6 +77,7 @@ func _update_step(delta) -> void:
 func _init_simulation() -> void:
 	Engine.time_scale = 1.0
 	Engine.max_physics_steps_per_frame = 1
+	rewards_manager.setup(self)
 	nn_client = NNClient.new()
 	_load_train_data(GlobalConst.BEST_TRAIN_DATA_PATH if load_best_model else GlobalConst.TRAIN_DATA_PATH)
 	_reset_episode()
@@ -85,14 +86,14 @@ func _init_simulation() -> void:
 func _handle_episode_end() -> void:
 	is_resetting = true
 	
-	var boss_win: bool = (not is_instance_valid(player) and player.health <= 0.0)
+	var boss_win: bool = (not is_instance_valid(player) or player.health <= 0.0)
 	
 	# Actualizar ventana de win rate ANTES de calcular final reward
 	_boss_win_rate_window.append(boss_win)
 	if _boss_win_rate_window.size() > DIFFICULTY_WINDOW:
 		_boss_win_rate_window.pop_front()
 	if _boss_win_rate_window.size() >= DIFFICULTY_WINDOW:
-		update_difficulty(_boss_win_rate_window)
+		_update_difficulty(_boss_win_rate_window)
 	
 	var timed_out: bool = current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
 	var final_reward: float = rewards_manager.calculate_final_reward(boss, player, current_step)
@@ -114,7 +115,7 @@ func _handle_episode_end() -> void:
 	
 	_reset_episode()
 
-func update_difficulty(boss_win_rate_window: Array) -> void:
+func _update_difficulty(boss_win_rate_window: Array) -> void:
 	# Calcula win rate del boss_scene en la ventana
 	var wins = boss_win_rate_window.count(true)
 	var win_rate = float(wins) / float(boss_win_rate_window.size())
@@ -124,8 +125,6 @@ func update_difficulty(boss_win_rate_window: Array) -> void:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
 	elif win_rate < 0.09:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
-
-
 
 # ------
 # Inputs
@@ -139,7 +138,6 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 	var player_vel       = Vector2.ZERO
 	var rel_vel          = Vector2.ZERO
 	var time_since_last: float
-	
 	
 	if is_instance_valid(boss_i.near_player):
 		dist_to_player = clamp(
@@ -156,7 +154,7 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 		time_since_last = 1.0
 	else:
 		time_since_last = clamp(
-			float(GlobalVars.current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
+			float(current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
 			0.0, 1.0
 		)
 	
@@ -213,7 +211,7 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 		player_vel.x,
 		player_vel.y,
 		dist_to_center,
-		float(boss_i.current_action)/ len(boss_i.current_action),                                                                                                                        
+		float(boss_i.current_action)/ len(boss_i.boss_actions),
 		clamp(current_step / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
 		clamp(boss_i.damage / boss_i.max_damage, 0.0, 1.0),
 		mouse_pos.x / GlobalConst.game_size.x,
@@ -245,6 +243,7 @@ func _reset_episode() -> void:
 	nn_outputs["move_dir"]   = [0.0, 0.0]
 	nn_outputs["shot_angle"] = 0.0
 	nn_outputs["action"]     = 0
+	rewards_manager.reset()
 	_spawn_entities()
 
 func _spawn_entities() -> void:
