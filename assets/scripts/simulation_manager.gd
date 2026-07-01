@@ -121,10 +121,16 @@ func _update_difficulty(boss_win_rate_window: Array) -> void:
 	var win_rate = float(wins) / float(boss_win_rate_window.size())
 	
 	# Solo sube la dificultad si el boss_scene gana más del N%
+	var new_difficulty := GlobalVars.player_difficulty
 	if win_rate > 0.19:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
 	elif win_rate < 0.09:
 		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
+	
+	if new_difficulty != GlobalVars.player_difficulty:
+		GlobalVars.player_difficulty = new_difficulty
+		if is_instance_valid(player):
+			player.apply_difficulty(new_difficulty)
 
 # ------
 # Inputs
@@ -224,6 +230,22 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 	inputs.append_array(b_dir_to_boss_x)
 	inputs.append_array(b_dir_to_boss_y)
 	inputs.append_array(b_approach)
+	if is_instance_valid(boss_i.near_player):
+		inputs.append_array([
+			boss_i.near_player.health / boss_i.near_player.max_health,
+			float(boss_i.near_player.is_on_floor()),
+			clamp(float(current_step - boss_i.near_player.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
+			boss_i.near_player.global_position.x / GlobalConst.game_size.x,
+			boss_i.near_player.global_position.y / GlobalConst.game_size.y,
+		])
+	else:
+		inputs.append_array([
+			0.0,
+			0.0,
+			0.0,
+			0.0,
+			0.0
+			])
 	return inputs
 
 # ------------
@@ -256,6 +278,8 @@ func _spawn_entities() -> void:
 	
 	player = player_instance.init()
 	boss = boss_instance.init()
+	
+	player.apply_difficulty(GlobalVars.player_difficulty)
 
 	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)

@@ -8,9 +8,6 @@ var life_time: float
 var dir_to_mirror: Vector2 = Vector2.ZERO
 var damage: float
 
-var boss_dir: Vector2 = Vector2.ZERO
-var player_dir: Vector2 = Vector2.ZERO
-
 var from_group: StringName
 var group_target: StringName
 var target:Area2D = null

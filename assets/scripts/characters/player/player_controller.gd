@@ -1,6 +1,8 @@
 extends CharacterBody2D
 class_name PlayerController
 
+signal difficulty_changed(new_difficulty: float)
+
 # Obtencion, creacion e instanciacion de clases y nodos
 @onready var controls: PlayerControls = $PlayerMechanics/Controls as PlayerControls
 @onready var smooth_movement: PlayerSmoothMovement = $PlayerMechanics/SmoothMovement as PlayerSmoothMovement
@@ -70,16 +72,9 @@ func init() -> PlayerController:
 	collisions.setup(self)
 	return self
 
-# MOVER A OTRO LADO
-func get_inputs() -> Array:
-	
-	return [
-		health / max_health,
-		float(self.is_on_floor()),
-		clamp(float(GlobalVars.current_step - self.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
-		global_position.x / GlobalConst.game_size.x,
-		global_position.y / GlobalConst.game_size.y,
-	]
+func apply_difficulty(new_difficulty: float) -> void:
+	player_difficulty = new_difficulty
+	difficulty_changed.emit(new_difficulty)
 
 func dead_if_can() -> void:
 	if health <= 0.0:

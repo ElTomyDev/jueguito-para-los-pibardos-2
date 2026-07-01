@@ -176,5 +176,4 @@ func _dead_if_can() -> void:
 	if health <= 0:
 		set_process(false)
 		set_physics_process(false)
-		GlobalVars.boss = null
 		queue_free()

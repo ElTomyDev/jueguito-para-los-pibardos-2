@@ -1,7 +1,7 @@
 extends Control
 
 var _redraw_counter: int = 0
-	
+
 @warning_ignore("unused_parameter")
 func _process(delta: float) -> void:
 	_redraw_counter += 1

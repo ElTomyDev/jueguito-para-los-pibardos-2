@@ -75,15 +75,13 @@ func _set_bullet_values(bullet_instence: Bullet, custom_bullet_dir: Vector2) -> 
 	var disp_x = randf_range(-bullet_dispersion, bullet_dispersion)
 	var disp_y = randf_range(-bullet_dispersion, bullet_dispersion)
 	if character is PlayerController:
-		bullet_instence.boss_dir   = Vector2.ZERO
-		bullet_instence.player_dir = Utils.view_to(
+		bullet_instence.dir_to_mirror = Utils.view_to(
 			self.global_position,
 			get_global_mouse_position() + Vector2(disp_x, disp_y),
 			100.0, self, false
 		) if custom_bullet_dir == Vector2.ZERO else custom_bullet_dir
 	if character is BossController:
-		bullet_instence.player_dir = Vector2.ZERO
-		bullet_instence.boss_dir   = Vector2(cos(character.shot_angle), sin(character.shot_angle)) + Vector2(disp_x, disp_y)
+		bullet_instence.dir_to_mirror = Vector2(cos(character.shot_angle), sin(character.shot_angle)) + Vector2(disp_x, disp_y)
 
 func _get_total_bullet_damage() -> float:
 	return gun_damage if not character else gun_damage + character.damage

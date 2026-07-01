@@ -1,8 +1,8 @@
 extends Node
 
 var game_size: Vector2 = Vector2(
-	ProjectSettings.get_setting("display/window/size/viewport_height"),
-	ProjectSettings.get_setting("display/window/size/viewport_width")
+	ProjectSettings.get_setting("display/window/size/viewport_width"),
+	ProjectSettings.get_setting("display/window/size/viewport_height")
 	)
 
 const OUTPUTS_NAMES: Array = ['move_dir', 'shot_angle', 'action']

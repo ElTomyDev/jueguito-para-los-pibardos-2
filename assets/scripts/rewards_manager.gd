@@ -183,7 +183,7 @@ func calculate_final_reward(boss: BossController, player: PlayerController, curr
 		GlobalVars.boss_wins += 1
 		return TERM_WIN_BASE + time_ratio * TERM_WIN_TIME_BONUS  # 100..130
 	
-	if is_instance_valid(boss) or boss.health <= 0.0:
+	if not is_instance_valid(boss) or boss.health <= 0.0:
 		var player_dmg_ratio = 0.0
 		if is_instance_valid(player):
 			player_dmg_ratio = 1.0 - (player.health / player.max_health)
