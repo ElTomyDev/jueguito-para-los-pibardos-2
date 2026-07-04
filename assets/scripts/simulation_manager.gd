@@ -19,9 +19,6 @@ var boss: BossController = null
 var player: PlayerController = null
 var bullets: Array[Bullet] = []
 
-var current_episode: int = 0
-var current_step: int = 0
-
 # NN
 var nn_client: NNClient
 var nn_outputs: Dictionary = {
@@ -62,15 +59,15 @@ func _physics_process(delta: float) -> void:
 	var response = nn_client.get_last_action()
 	nn_outputs["move_dir"]   = response.get("move_dir",   [0.0, 0.0])
 	nn_outputs["shot_angle"] = response.get("shot_angle", 0.0)
-	nn_outputs["action"]     = response.get("action",     0)
+	nn_outputs["action"]     = response.get("action", 0)
 	_update_step(delta)
-	current_step += 1
+	GlobalVars.current_step += 1
 	if _can_episode_end():
 		_handle_episode_end()
 
 func _update_step(delta) -> void:
 	boss.update(delta, nn_outputs, player)
-	player.update(delta, boss, bullets, current_episode)
+	player.update(delta, boss, bullets, GlobalVars.current_episode)
 	for b in bullets:
 		b.update(delta)
 
@@ -95,10 +92,10 @@ func _handle_episode_end() -> void:
 	if _boss_win_rate_window.size() >= DIFFICULTY_WINDOW:
 		_update_difficulty(_boss_win_rate_window)
 	
-	var timed_out: bool = current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
-	var final_reward: float = rewards_manager.calculate_final_reward(boss, player, current_step)
+	var timed_out: bool = GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
+	var final_reward: float = rewards_manager.calculate_final_reward(boss, player, GlobalVars.current_step)
 	nn_client.notify_episode_end(
-		current_episode,
+		GlobalVars.current_episode,
 		current_reward,
 		final_reward,
 		timed_out,
@@ -106,10 +103,10 @@ func _handle_episode_end() -> void:
 	)
 	
 	_save_train_data(GlobalConst.TRAIN_DATA_PATH)
-	var best_info_dict = rewards_manager.update_best_avg_reward(current_reward, current_episode, _save_train_data ,best_avg_reward, best_avg_episode)
+	var best_info_dict = rewards_manager.update_best_avg_reward(current_reward, GlobalVars.current_episode, _save_train_data ,best_avg_reward, best_avg_episode)
 	best_avg_reward = best_info_dict['best_reward']
 	best_avg_episode = best_info_dict['best_episode']
-	current_episode += 1
+	GlobalVars.current_episode += 1
 	GlobalVars.best_episode_rewards.append(best_avg_reward)
 	GlobalVars.episode_rewards.append(current_reward)
 	
@@ -123,9 +120,9 @@ func _update_difficulty(boss_win_rate_window: Array) -> void:
 	# Solo sube la dificultad si el boss_scene gana más del N%
 	var new_difficulty := GlobalVars.player_difficulty
 	if win_rate > 0.19:
-		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty + 0.02, 0.0, 1.0)
+		new_difficulty = clamp(new_difficulty + 0.02, 0.0, 1.0)
 	elif win_rate < 0.09:
-		GlobalVars.player_difficulty = clamp(GlobalVars.player_difficulty - 0.01, 0.0, 1.0)
+		new_difficulty = clamp(new_difficulty - 0.01, 0.0, 1.0)
 	
 	if new_difficulty != GlobalVars.player_difficulty:
 		GlobalVars.player_difficulty = new_difficulty
@@ -152,15 +149,15 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 		)
 		var to_player = (boss_i.near_player.global_position - boss_i.global_position).angle()
 		angle_to_player_raw = to_player / PI  # normalizado [-1, 1]
-		player_vel  = boss_i.near_player.velocity.normalized()
-		rel_vel     = boss_i.near_player.velocity - boss_i.velocity
+		player_vel = boss_i.near_player.velocity.normalized()
+		rel_vel = boss_i.near_player.velocity - boss_i.velocity
 	
-	var src_last_shot = boss_i.shot_attack.last_shot_step if is_instance_valid(boss_i.shot_attack) else -1
+	var src_last_shot = boss_i.last_shot_step if is_instance_valid(boss_i.shot_attack) else -1
 	if src_last_shot <= 0:
 		time_since_last = 1.0
 	else:
 		time_since_last = clamp(
-			float(current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
+			float(GlobalVars.current_step - src_last_shot) / float(GlobalConst.MAX_STEP_FOR_EPISODE),
 			0.0, 1.0
 		)
 	
@@ -218,7 +215,7 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 		player_vel.y,
 		dist_to_center,
 		float(boss_i.current_action)/ len(boss_i.boss_actions),
-		clamp(current_step / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
+		clamp(GlobalVars.current_step / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
 		clamp(boss_i.damage / boss_i.max_damage, 0.0, 1.0),
 		mouse_pos.x / GlobalConst.game_size.x,
 		mouse_pos.y / GlobalConst.game_size.y,
@@ -234,7 +231,7 @@ func _get_inputs_for_nn(boss_i: BossController) -> Array:
 		inputs.append_array([
 			boss_i.near_player.health / boss_i.near_player.max_health,
 			float(boss_i.near_player.is_on_floor()),
-			clamp(float(current_step - boss_i.near_player.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
+			clamp(float(GlobalVars.current_step - boss_i.near_player.last_shot_step) / float(GlobalConst.MAX_STEP_FOR_EPISODE), 0.0, 1.0),
 			boss_i.near_player.global_position.x / GlobalConst.game_size.x,
 			boss_i.near_player.global_position.y / GlobalConst.game_size.y,
 		])
@@ -260,7 +257,7 @@ func _reset_episode() -> void:
 	boss = null
 	player = null
 	bullets.clear()
-	current_step  = 0
+	GlobalVars.current_step  = 0
 	current_reward = 0.0
 	nn_outputs["move_dir"]   = [0.0, 0.0]
 	nn_outputs["shot_angle"] = 0.0
@@ -276,13 +273,13 @@ func _spawn_entities() -> void:
 	player_instance.global_position = entities_pos[0]
 	boss_instance.global_position   = entities_pos[1]
 	
-	player = player_instance.init()
-	boss = boss_instance.init()
-	
-	player.apply_difficulty(GlobalVars.player_difficulty)
-
-	get_tree().get_root().add_child.call_deferred(player_instance)
 	get_tree().get_root().add_child.call_deferred(boss_instance)
+	get_tree().get_root().add_child.call_deferred(player_instance)
+	
+	boss = boss_instance.init()
+	player = player_instance.init()
+
+	player.apply_difficulty(GlobalVars.player_difficulty)
 
 func _get_entities_position() -> Array:
 	var player_pos: Vector2
@@ -311,7 +308,7 @@ func _can_episode_end() -> bool:
 	if not is_instance_valid(boss): return true
 	if not is_instance_valid(player): return true
 	return (
-		current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
+		GlobalVars.current_step >= GlobalConst.MAX_STEP_FOR_EPISODE
 		or boss.health   <= 0.0
 		or player.health <= 0.0
 	)
@@ -322,7 +319,7 @@ func _load_train_data(path) -> void:
 		if data.is_empty():
 			print("No hay datos para cargar: ", path)
 			return
-		current_episode   = data.get('episode', 0)
+		GlobalVars.current_episode   = data.get('episode', 0)
 		best_avg_reward   = data.get('best_avg_reward', -INF)
 		best_avg_episode  = data.get('best_avg_episode', 0)
 		GlobalVars.player_wins = data.get('player_wins', 0)
@@ -334,7 +331,7 @@ func _load_train_data(path) -> void:
 
 func _save_train_data(path) -> void:
 	var data: Dictionary = {
-		'episode':        current_episode,
+		'episode':        GlobalVars.current_episode,
 		'best_avg_reward':  best_avg_reward,
 		'best_avg_episode': best_avg_episode,
 		'player_wins': GlobalVars.player_wins,

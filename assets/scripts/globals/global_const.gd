@@ -6,7 +6,7 @@ var game_size: Vector2 = Vector2(
 	)
 
 const OUTPUTS_NAMES: Array = ['move_dir', 'shot_angle', 'action']
-const INPUTS: int = 46
+const INPUTS: int = 50
 
 const MAX_STEP_FOR_EPISODE: int = 5000
 

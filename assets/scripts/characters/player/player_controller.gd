@@ -55,21 +55,21 @@ var last_shot_step: int = 0
 func update(delta: float, boss: BossController, bullets: Array[Bullet], current_episode: int) -> void:
 	near_boss = boss
 	dead_if_can()
-	controls.update()
-	smooth_movement.update(delta)
-	shot_attack.update(delta)
-	adjustable_jump.update(delta)
+	if controls: controls.update()
+	if smooth_movement: smooth_movement.update(delta)
+	if shot_attack: shot_attack.update(delta)
+	if adjustable_jump: adjustable_jump.update(delta)
 	update_automatic_mechanics(delta, near_boss, bullets, current_episode)
 	move_and_slide()
 
 func init() -> PlayerController:
 	health = max_health
-	controls.setup(self)
-	smooth_movement.setup(self)
-	adjustable_jump.setup(self)
-	damage_area.setup(self)
-	shot_attack.setup(self)
-	collisions.setup(self)
+	if controls: controls.setup(self)
+	if smooth_movement: smooth_movement.setup(self)
+	if adjustable_jump: adjustable_jump.setup(self)
+	if damage_area: damage_area.setup(self)
+	if shot_attack: shot_attack.setup(self)
+	if collisions: collisions.setup(self)
 	return self
 
 func apply_difficulty(new_difficulty: float) -> void:
@@ -126,17 +126,6 @@ func update_auto_dir(boss: BossController) -> void:
 		else:
 			auto_dir = 0
 
-func update_difficulty(boss_win_rate_window: Array) -> void:
-	# Calcula win rate del boss_scene en la ventana
-	var wins = boss_win_rate_window.count(true)
-	var win_rate = float(wins) / float(boss_win_rate_window.size())
-	
-	# Solo sube la dificultad si el boss_scene gana más del N%
-	if win_rate > 0.19:
-		player_difficulty = clamp(player_difficulty + 0.02, 0.0, 1.0)
-	elif win_rate < 0.09:
-		player_difficulty = clamp(player_difficulty - 0.01, 0.0, 1.0)
-
 # --- Disparo automatico ---
 func _auto_shot(boss: BossController, state: int, delta: float) -> void:
 	auto_shot_timer += delta
@@ -153,7 +142,7 @@ func _auto_shot(boss: BossController, state: int, delta: float) -> void:
 func _chill_shot_state(boss: BossController) -> void:
 	if is_instance_valid(boss) and randf() < 0.25:
 		auto_fire_rate = 0.5
-		shot_attack._shot(
+		if shot_attack: shot_attack._shot(
 			Utils.view_to(
 				shot_attack.global_position,
 				boss.global_position,

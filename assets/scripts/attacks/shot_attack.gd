@@ -10,7 +10,6 @@ class_name ShotAttack
 @export var rotation_speed: float = 50.0
 @export var bullet_dispersion: float = 18.0
 @export var fire_rate: float = 0.6
-@export var is_boss: bool = false
 
 @export_category("External Nodes")
 @export var bullet: PackedScene = preload("res://assets/scenes/attacks/gun/bullet.tscn")
@@ -19,8 +18,6 @@ class_name ShotAttack
 
 var character: CharacterBody2D = null
 
-var last_shot_step: int = 0
-
 var fire_timer: float = 0.0
 var total_bullet_damage: float
 
@@ -28,7 +25,7 @@ func setup(body: CharacterBody2D) -> void:
 	character = body
 
 @warning_ignore("unused_parameter")
-func update(delta: float) -> void:
+func update(delta: float, current_step: int=0) -> void:
 	if (character is BossController):
 		boss_shot(delta)
 	if (character is PlayerController):
@@ -41,7 +38,6 @@ func boss_shot(delta: float) -> void:
 	if fire_timer <= 0:
 		if character.can_shot():  # solo dispara si la acción es "ataque"
 			_shot()
-			last_shot_step = GlobalVars.current_step
 			character.last_shot_step = GlobalVars.current_step
 		fire_timer = fire_rate  # resetea siempre, haya disparado o no
 

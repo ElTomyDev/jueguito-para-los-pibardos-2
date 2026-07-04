@@ -103,7 +103,7 @@ func calculate_reward(boss: BossController, player: PlayerController, bullets: A
 	_player_bullets_near_last_frame = current_player_bullets
 	
 	# ── 2. PRECISIÓN: aim en el momento del disparo ──────────────────────────
-	var boss_shot_step = b.shot_attack.last_shot_step
+	var boss_shot_step = b.last_shot_step
 	if boss_shot_step > last_boss_shot_step and boss_shot_step > 0:
 		last_boss_shot_step = boss_shot_step
 		if is_instance_valid(b.near_player):

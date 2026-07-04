@@ -9,7 +9,7 @@ const MAX_BULLET_DETECTS: int = 3
 @onready var shot_attack: ShotAttack = $BossMechanics/ShotAttack as ShotAttack
 
 @export_category("Boss Config")
-@export var force_action_mode: bool = true
+@export var force_action_mode: bool = false
 @export var action_forced: int = 1
 
 @export_category("Boss Stats")
@@ -152,7 +152,8 @@ func _get_near_bullet() -> Bullet:
 func _move_action(delta: float) -> void:
 	if not is_instance_valid(floating_movement):
 		push_error("No se encontro la instancia 'floating_movement'")
-	floating_movement.update(delta)
+	
+	if floating_movement: floating_movement.update(delta)
 	damage = min(damage + damage_increment, max_damage)
 
 func _ball_attack_action(delta: float) -> void: 

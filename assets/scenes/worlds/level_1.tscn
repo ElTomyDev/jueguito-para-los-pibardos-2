@@ -1,7 +1,9 @@
-[gd_scene load_steps=7 format=3 uid="uid://beeao680qoeeb"]
+[gd_scene load_steps=9 format=3 uid="uid://beeao680qoeeb"]
 
 [ext_resource type="PackedScene" uid="uid://b3fjumhorxnno" path="res://assets/scenes/ui/train_data.tscn" id="2_56x64"]
 [ext_resource type="PackedScene" uid="uid://bi11g54osr03a" path="res://assets/scenes/simulation_manager.tscn" id="2_qbvmm"]
+[ext_resource type="PackedScene" uid="uid://cfwgy1ayuvs04" path="res://assets/scenes/characters/player_controller.tscn" id="3_j1tjx"]
+[ext_resource type="PackedScene" uid="uid://do24pdmmrhm74" path="res://assets/scenes/characters/boss_controller.tscn" id="4_2qnd0"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_3hma4"]
 size = Vector2(20, 659)
@@ -20,6 +22,8 @@ size = Vector2(2096, 22)
 [node name="TrainData" parent="." instance=ExtResource("2_56x64")]
 
 [node name="SimulationManager" parent="." node_paths=PackedStringArray("player_spawn_point") instance=ExtResource("2_qbvmm")]
+player_scene = ExtResource("3_j1tjx")
+boss_scene = ExtResource("4_2qnd0")
 player_spawn_point = NodePath("SpawnPlayer")
 
 [node name="SpawnPlayer" parent="SimulationManager" index="0"]
